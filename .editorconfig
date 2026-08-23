@@ -1,0 +1,22 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_size = 4
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+ktlint_code_style = intellij_idea
+max_line_length = 120
+
+# Recorded CLI help output. Byte-for-byte fidelity matters more than tidiness here:
+# trimming would make the snapshots disagree with what the CLI actually prints.
+[docs/cli-surface/*.txt]
+trim_trailing_whitespace = false
+insert_final_newline = false
+
+[*.{yml,yaml}]
+indent_size = 2
