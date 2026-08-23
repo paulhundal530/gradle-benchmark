@@ -90,9 +90,9 @@ cache it, but only with a `cache-encryption-key` secret, which is not set up.
 
 Deliberate, and none of them are in Milestone 1's scope:
 
-- **`integrationTest` is a no-op.** The aggregator task resolves lazily and matches
-  nothing until Milestone 3 registers real integration tests. It is in CI now so the step
-  does not need adding later.
+- ~~**`integrationTest` is a no-op.**~~ Closed in Milestone 2: `engine` now has an
+  integration test suite that exercises a real `gradle-profiler` process.
 - **`engine` and `report` compile empty.** Populated in Milestones 2, 3 and 6.
-- **`validate`, `run` and `compare` parse but do not execute.** Each prints its resolved
-  configuration and a notice on stderr. No command fabricates a benchmark result.
+- ~~**`validate` parses but does not execute.**~~ Closed in Milestone 2.
+- **`run` and `compare` do not execute.** `run` validates its selection and stops;
+  `compare` still only echoes configuration. No command fabricates a benchmark result.
