@@ -14,10 +14,15 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.options.switch
 import com.github.ajalt.clikt.parameters.types.double
 import com.github.ajalt.clikt.parameters.types.path
+import dev.gradlebenchmark.engine.GradleProfiler
+import dev.gradlebenchmark.engine.ProcessGradleProfiler
+import dev.gradlebenchmark.engine.ScenarioInspector
+import dev.gradlebenchmark.engine.ScenarioValidator
+import dev.gradlebenchmark.engine.ValidationRequest
 import java.nio.file.Path
 
 private const val MILESTONE_NOTICE =
-    "Scenario execution is not wired up yet; this milestone covers argument handling only."
+    "Benchmark execution is not wired up yet; selection has been validated but nothing was measured."
 
 /** Root command. Holds no behavior of its own beyond dispatching to a subcommand. */
 public class GradleBenchmarkCommand : CliktCommand(name = "gradle-benchmark") {
@@ -27,13 +32,30 @@ public class GradleBenchmarkCommand : CliktCommand(name = "gradle-benchmark") {
 }
 
 /** Options shared by every subcommand that writes artifacts. */
-public abstract class ArtifactWritingCommand(name: String) : CliktCommand(name = name) {
+public abstract class ArtifactWritingCommand(
+    name: String,
+    /**
+     * How to obtain a profiler for a given executable path.
+     *
+     * Injected so command behavior can be tested without spawning real processes, while
+     * production still gets the real thing by default.
+     */
+    private val profilerFactory: (String) -> GradleProfiler = { ProcessGradleProfiler(it) },
+) : CliktCommand(name = name) {
     internal val outputDir: Path? by option(
         "--output-dir",
         help = "Directory for generated artifacts (default: build/gradle-benchmark).",
     ).path()
 
     internal val paths: OutputPaths get() = OutputPaths.resolve(outputDir)
+
+    internal val gradleProfilerExecutable: String by option(
+        "--gradle-profiler",
+        help = "Path to the gradle-profiler executable.",
+    ).default(ProcessGradleProfiler.DEFAULT_EXECUTABLE)
+
+    internal fun validator(): ScenarioValidator =
+        ScenarioValidator(ScenarioInspector(profilerFactory(gradleProfilerExecutable)))
 }
 
 /**
@@ -42,7 +64,8 @@ public abstract class ArtifactWritingCommand(name: String) : CliktCommand(name =
  * Cheap to run, so it can catch a bad scenario name before a build spends minutes
  * measuring the wrong thing.
  */
-public class ValidateCommand : ArtifactWritingCommand(name = "validate") {
+public class ValidateCommand(profilerFactory: (String) -> GradleProfiler = { ProcessGradleProfiler(it) }) :
+    ArtifactWritingCommand(name = "validate", profilerFactory = profilerFactory) {
     override fun help(context: Context): String = "Validate scenario selection, configuration, and required tooling."
 
     internal val scenarioDir: Path? by option(
@@ -60,16 +83,35 @@ public class ValidateCommand : ArtifactWritingCommand(name = "validate") {
         help = "Gradle Profiler scenario group to narrow the selection to.",
     )
 
+    internal val projectDir: Path? by option(
+        "--project-dir",
+        help = "Directory containing the build under test.",
+    ).path()
+
+    internal val baselineScenario: String? by option(
+        "--baseline-scenario",
+        help = "Check that this scenario is one the selection will actually run.",
+    )
+
     override fun run() {
-        echo("scenario-dir:   ${scenarioDir ?: "<unset>"}")
-        echo("scenario-file:  ${scenarioFile ?: "<unset>"}")
-        echo("scenario-group: ${scenarioGroup ?: "<unset>"}")
-        echo(MILESTONE_NOTICE, err = true)
+        val selection = reportOrExit(
+            validator().validate(
+                ValidationRequest(
+                    scenarioDir = scenarioDir,
+                    scenarioFile = scenarioFile,
+                    scenarioGroup = scenarioGroup,
+                    projectDir = projectDir,
+                    baselineScenario = baselineScenario,
+                ),
+            ),
+        )
+        describe(selection)
     }
 }
 
 /** Executes a benchmark, and compares variants when a baseline scenario is named. */
-public class RunCommand : ArtifactWritingCommand(name = "run") {
+public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessGradleProfiler(it) }) :
+    ArtifactWritingCommand(name = "run", profilerFactory = profilerFactory) {
     override fun help(context: Context): String =
         "Run a benchmark and write run.json, plus a comparison when variants are compared."
 
@@ -124,17 +166,32 @@ public class RunCommand : ArtifactWritingCommand(name = "run") {
     internal val mode: ComparisonMode get() = ComparisonMode.VARIANT
 
     override fun run() {
-        echo("output-dir:      ${paths.outputDir}")
-        echo("baseline:        ${baselineScenario ?: "<none — no comparison will be produced>"}")
-        echo("threshold:       $regressionThresholdPercent%")
-        echo("fail-on-regression: ${mode.resolveFailOnRegression(failOnRegressionFlag)}")
-        echo("timeout:         ${timeoutMinutes?.let { "$it min" } ?: "unbounded"}")
+        // Validate before anything expensive. A misspelled baseline should cost a tenth of
+        // a second, not the minutes it takes to measure the wrong thing and discard it.
+        val selection = reportOrExit(
+            validator().validate(
+                ValidationRequest(
+                    scenarioDir = scenarioDir,
+                    scenarioFile = scenarioFile,
+                    scenarioGroup = scenarioGroup,
+                    projectDir = projectDir,
+                    baselineScenario = baselineScenario,
+                ),
+            ),
+        )
+        describe(selection)
+        echo("output dir:    ${paths.outputDir}")
+        echo("baseline:      ${baselineScenario ?: "<none, so no comparison will be produced>"}")
+        echo("threshold:     $regressionThresholdPercent%")
+        echo("enforcement:   ${mode.resolveFailOnRegression(failOnRegressionFlag)}")
+        echo("timeout:       ${timeoutMinutes?.let { "$it min" } ?: "unbounded"}")
         echo(MILESTONE_NOTICE, err = true)
     }
 }
 
 /** Compares two normalized run files. Both are required; history is not its concern. */
-public class CompareCommand : ArtifactWritingCommand(name = "compare") {
+public class CompareCommand(profilerFactory: (String) -> GradleProfiler = { ProcessGradleProfiler(it) }) :
+    ArtifactWritingCommand(name = "compare", profilerFactory = profilerFactory) {
     override fun help(context: Context): String = "Compare two compatible run.json files and write comparison.json."
 
     internal val baseline: Path by option(

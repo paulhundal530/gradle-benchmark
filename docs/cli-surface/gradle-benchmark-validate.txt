@@ -3,11 +3,15 @@ Usage: gradle-benchmark validate [<options>]
   Validate scenario selection, configuration, and required tooling.
 
 Options:
-  --output-dir=<path>      Directory for generated artifacts (default:
-                           build/gradle-benchmark).
-  --scenario-dir=<path>    Directory searched for .scenarios files.
-  --scenario-file=<path>   Scenario file to select, relative to --scenario-dir
-                           when both are given.
-  --scenario-group=<text>  Gradle Profiler scenario group to narrow the
-                           selection to.
-  -h, --help               Show this message and exit
+  --output-dir=<path>         Directory for generated artifacts (default:
+                              build/gradle-benchmark).
+  --gradle-profiler=<text>    Path to the gradle-profiler executable.
+  --scenario-dir=<path>       Directory searched for .scenarios files.
+  --scenario-file=<path>      Scenario file to select, relative to
+                              --scenario-dir when both are given.
+  --scenario-group=<text>     Gradle Profiler scenario group to narrow the
+                              selection to.
+  --project-dir=<path>        Directory containing the build under test.
+  --baseline-scenario=<text>  Check that this scenario is one the selection
+                              will actually run.
+  -h, --help                  Show this message and exit
