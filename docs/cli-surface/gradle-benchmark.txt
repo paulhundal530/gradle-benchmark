@@ -1,0 +1,13 @@
+Usage: gradle-benchmark [<options>] <command> [<args>]...
+
+  Regression testing for Gradle build performance.
+
+Options:
+  -h, --help  Show this message and exit
+
+Commands:
+  validate  Validate scenario selection, configuration, and required tooling.
+  run       Run a benchmark and write run.json, plus a comparison when variants
+            are compared.
+  compare   Compare two compatible run.json files and write comparison.json.
+  help      Show usage for the tool or a command.

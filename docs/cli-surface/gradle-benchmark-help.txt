@@ -1,0 +1,9 @@
+Usage: gradle-benchmark help [<options>] [<command>]...
+
+  Show usage for the tool or a command.
+
+Options:
+  -h, --help  Show this message and exit
+
+Arguments:
+  <command>  Command to show usage for. Shows top-level usage when omitted.
