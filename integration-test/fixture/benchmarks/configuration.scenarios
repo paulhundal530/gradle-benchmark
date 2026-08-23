@@ -1,0 +1,7 @@
+# A second file so discovery ambiguity is exercised against a real directory.
+configuration {
+    title = "Configuration only"
+    tasks = []
+    warm-ups = 1
+    iterations = 2
+}

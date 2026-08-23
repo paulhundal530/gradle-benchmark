@@ -1,0 +1,18 @@
+baseline {
+    title = "Baseline"
+    tasks = ["work"]
+    warm-ups = 1
+    iterations = 2
+}
+
+cc-enabled {
+    title = "Configuration cache"
+    tasks = ["work"]
+    gradle-args = ["--configuration-cache"]
+    warm-ups = 1
+    iterations = 2
+}
+
+scenario-groups {
+    nightly = ["baseline", "cc-enabled"]
+}
