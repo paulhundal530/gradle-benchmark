@@ -74,6 +74,18 @@ B=./cli/build/install/gradle-benchmark/bin/gradle-benchmark
 The last three are the milestone's most load-bearing behavior: enforcement is one
 mechanism whose default is chosen by the invocation, never branched on per workflow.
 
+## Build performance
+
+`gradle.properties` enables parallel execution, the build cache, and the configuration
+cache. On a project this small the absolute saving is modest (a no-op `build` goes from
+roughly 0.44s to 0.29s), but configuration-cache compatibility is far cheaper to hold from
+the start than to retrofit: every task added from here is checked as it lands. The root
+`integrationTest` aggregator was verified against a real module task to confirm it still
+works once Milestone 3 registers one.
+
+CI does not currently reuse the configuration cache between runs. `gradle/actions` can
+cache it, but only with a `cache-encryption-key` secret, which is not set up.
+
 ## Known gaps
 
 Deliberate, and none of them are in Milestone 1's scope:
