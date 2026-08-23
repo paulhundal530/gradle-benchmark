@@ -35,6 +35,20 @@ jobs:
       - name: Build and unit test
         run: ./gradlew build
 
+      # Integration tests exercise a real gradle-profiler process. Without it installed
+      # they would skip, and CI would go green having tested nothing.
+      - name: Install Gradle Profiler
+        run: |
+          set -euo pipefail
+          VERSION=0.25.2
+          curl -sSfL -o /tmp/gradle-profiler.zip \
+            "https://github.com/gradle/gradle-profiler/releases/download/v${VERSION}/gradle-profiler-${VERSION}.zip"
+          unzip -q /tmp/gradle-profiler.zip -d "$HOME/tools"
+          echo "$HOME/tools/gradle-profiler-${VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Gradle Profiler is available
+        run: gradle-profiler --version
+
       - name: Integration test
         run: ./gradlew integrationTest
 
