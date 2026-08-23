@@ -1,0 +1,27 @@
+Usage: gradle-benchmark run [<options>]
+
+  Run a benchmark and write run.json, plus a comparison when variants are
+  compared.
+
+Options:
+  --output-dir=<path>         Directory for generated artifacts (default:
+                              build/gradle-benchmark).
+  --scenario-dir=<path>       Directory searched for .scenarios files.
+  --scenario-file=<path>      Scenario file to select, relative to
+                              --scenario-dir when both are given.
+  --scenario-group=<text>     Gradle Profiler scenario group to narrow the
+                              selection to.
+  --project-dir=<path>        Directory containing the build under test.
+  --baseline-scenario=<text>  Name of the scenario treated as the control.
+                              Every other scenario is compared against it.
+                              Without this, no comparison is produced.
+  --regression-threshold-percent=<float>
+                              A candidate exceeding the baseline by more than
+                              this percentage regresses.
+  --fail-on-regression, --no-fail-on-regression
+                              Exit non-zero when a regression is detected.
+                              Defaults to false for variant comparison, which
+                              is exploratory.
+  --timeout-minutes=<float>   Abort the benchmark after this many minutes.
+                              Unbounded when unset.
+  -h, --help                  Show this message and exit

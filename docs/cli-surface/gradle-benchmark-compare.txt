@@ -1,0 +1,17 @@
+Usage: gradle-benchmark compare [<options>]
+
+  Compare two compatible run.json files and write comparison.json.
+
+Options:
+  --output-dir=<path>  Directory for generated artifacts (default:
+                       build/gradle-benchmark).
+  --baseline=<path>    run.json treated as the baseline.
+  --candidate=<path>   run.json treated as the candidate.
+  --regression-threshold-percent=<float>
+                       A candidate exceeding the baseline by more than this
+                       percentage regresses.
+  --fail-on-regression, --no-fail-on-regression
+                       Exit non-zero when a regression is detected. Defaults to
+                       true here, because historical and revision comparison
+                       exist to gate on regressions.
+  -h, --help           Show this message and exit
