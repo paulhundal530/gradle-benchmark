@@ -100,6 +100,42 @@ changing; one asserts the profiler version explicitly, so when a release does wr
 
 See the local validation walkthrough in the pull request for end-to-end CLI checks.
 
+## Findings for Milestone 4, from a real Android project
+
+Running against a real project (Android, Gradle 9.3.1, an `apply-abi-change-to` scenario)
+surfaced something the fixture could not, because the fixture declares no mutators.
+
+**`mutators` contains absolute paths, and the plan puts it in `workloadIdentityHash`.**
+
+```
+ApplyAbiChangeToSourceFileMutator(/Users/phundal/AndroidStudioProjects/Numverify/./app/src/main/java/...)
+```
+
+The plan guards `gradleHome` and `javaHome` against exactly this, and misses `mutators`.
+Any scenario using `apply-abi-change-to`, `apply-non-abi-change-to` or the resource-change
+mutators embeds the project's absolute path, which means:
+
+- the same benchmark hashes differently on a laptop and on CI
+- every historical comparison returns `BASELINE_INCOMPATIBLE`
+- the failure is silent and total, which is precisely the risk the plan flags as highest
+
+Note also the `/./` in the path above, produced by `--project-dir .`. Two runs on the *same*
+machine differ if one passes a relative project directory and the other an absolute one.
+
+**Required in Milestone 4:** normalize mutator strings by relativizing embedded paths
+against the project directory before hashing, so the meaningful part (which file the
+benchmark mutates, which genuinely is workload identity) is kept and the machine-specific
+prefix is dropped. The M4 hash invariants must gain a case covering it.
+
+**Also observed, for the noise discussion deferred by section 10.** Warm-up exclusion is
+doing more work than the fixture suggested: the clean build's warm-up was 44.3s against
+measured builds of 2.3s and 2.0s. Including warm-ups would inflate the mean 7.5x. Median is
+far more robust (2.30s versus 2.15s), which supports it as the default statistic.
+
+Measured spread was 13.2% and 10.1% of the median at 2 and 3 iterations. A 5% regression
+threshold sits well inside that, which is a concrete illustration of section 10's warning
+that a percentage threshold is a tolerance policy and not statistical significance.
+
 ## Known gaps
 
 - **No `run.json`.** The normalized model, statistics, environment capture and
