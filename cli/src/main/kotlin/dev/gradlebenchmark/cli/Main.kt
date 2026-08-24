@@ -1,6 +1,7 @@
 package dev.gradlebenchmark.cli
 
 import com.github.ajalt.clikt.core.CliktError
+import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.core.parse
 import kotlin.system.exitProcess
@@ -21,6 +22,10 @@ internal fun runCli(args: Array<String>): ExitCode {
     return try {
         root.parse(args)
         ExitCode.SUCCESS
+    } catch (result: ProgramResult) {
+        // A command deliberately chose its exit code; preserve it rather than flattening
+        // every failure to "invalid input".
+        ExitCode.entries.find { it.code == result.statusCode } ?: ExitCode.BENCHMARK_ERROR
     } catch (error: CliktError) {
         root.echoFormattedHelp(error)
         when {

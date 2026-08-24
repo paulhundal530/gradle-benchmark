@@ -7,8 +7,8 @@ explicit tolerance, produces machine-readable results and a human-readable repor
 integrates with CI so teams catch build-speed regressions before they become a developer
 productivity problem.
 
-> **Status:** early development. Milestone 1 of 10 — the CLI skeleton parses and validates
-> arguments; benchmark execution is not wired up yet.
+> **Status:** early development. Milestone 2 of 10 — scenario discovery and validation
+> work against a real Gradle Profiler; benchmark execution is not wired up yet.
 
 ## Requirements
 
@@ -28,7 +28,35 @@ productivity problem.
 gradle-benchmark validate   # check scenario selection and tooling, without benchmarking
 gradle-benchmark run        # execute a benchmark, optionally comparing variants
 gradle-benchmark compare    # compare two normalized run.json files
+gradle-benchmark help       # usage for the tool or a command
 ```
+
+### Validating a selection
+
+`validate` resolves which scenarios a selection will actually run, without benchmarking
+anything. It delegates to Gradle Profiler's own resolution, so grouping semantics are not
+reimplemented.
+
+```bash
+gradle-benchmark validate --scenario-dir benchmarks --project-dir .
+```
+
+```text
+scenario file: benchmarks/build.scenarios
+scenarios:     2
+  - baseline
+  - cc-enabled
+```
+
+Failures exit `3` and name what was inspected rather than merely reporting invalidity:
+
+```text
+Baseline scenario 'basline' is not part of this selection.
+  Selection resolves to: baseline, cc-enabled
+```
+
+`run` performs the same validation before measuring, so a misspelled baseline costs a
+tenth of a second rather than the minutes it takes to benchmark the wrong thing.
 
 ### Comparing variants
 

@@ -8,6 +8,7 @@ description = "Command line interface. Parses arguments, invokes core use cases,
 dependencies {
     implementation(project(":core"))
     implementation(project(":engine"))
+    testImplementation(project(":engine"))
     implementation(project(":report"))
     implementation(libs.clikt)
 }

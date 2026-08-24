@@ -1,28 +1,57 @@
 package dev.gradlebenchmark.cli
 
 import com.github.ajalt.clikt.core.parse
+import dev.gradlebenchmark.engine.GradleProfiler
+import dev.gradlebenchmark.engine.ProfilerInvocation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import kotlin.io.path.writeText
 
+/**
+ * Covers option parsing and defaulting.
+ *
+ * `run` now validates its selection, so these tests supply a resolvable one and a fake
+ * profiler; otherwise every case would fail on selection rather than on the option under
+ * test.
+ */
 class CommandParsingTest {
+
+    @TempDir
+    lateinit var tempDir: Path
+
+    private val dumpOfTwo = "baseline {\n    tasks=[work]\n}\ncc-enabled {\n    tasks=[work]\n}"
+
+    private fun scenarioFile(): Path = tempDir.resolve("build.scenarios").also { it.writeText("baseline { }\n") }
+
+    private fun resolvableProfiler() = { _: String ->
+        object : GradleProfiler {
+            override fun invoke(arguments: List<String>) = ProfilerInvocation(0, dumpOfTwo, "")
+        }
+    }
+
+    private fun runCommand() = RunCommand(resolvableProfiler())
+
+    /** Minimal arguments that resolve, so option defaults can be observed. */
+    private fun selecting(vararg extra: String): Array<String> =
+        arrayOf("--scenario-file", scenarioFile().toString()) + extra
 
     @Test
     fun `run parses scenario selection and threshold`() {
-        val command = RunCommand()
+        val command = runCommand()
 
         command.parse(
-            arrayOf(
-                "--scenario-dir", "benchmarks",
-                "--scenario-file", "build.scenarios",
-                "--scenario-group", "configuration-cache",
-                "--baseline-scenario", "baseline",
-                "--regression-threshold-percent", "7.5",
+            selecting(
+                "--scenario-group",
+                "configuration-cache",
+                "--baseline-scenario",
+                "baseline",
+                "--regression-threshold-percent",
+                "7.5",
             ),
         )
 
-        assertThat(command.scenarioDir).isEqualTo(Path.of("benchmarks"))
-        assertThat(command.scenarioFile).isEqualTo(Path.of("build.scenarios"))
         assertThat(command.scenarioGroup).isEqualTo("configuration-cache")
         assertThat(command.baselineScenario).isEqualTo("baseline")
         assertThat(command.regressionThresholdPercent).isEqualTo(7.5)
@@ -30,27 +59,27 @@ class CommandParsingTest {
 
     @Test
     fun `run defaults the threshold to five percent`() {
-        val command = RunCommand()
+        val command = runCommand()
 
-        command.parse(emptyArray())
+        command.parse(selecting())
 
         assertThat(command.regressionThresholdPercent).isEqualTo(DEFAULT_THRESHOLD_PERCENT)
     }
 
     @Test
     fun `run leaves the baseline unset so no comparison is implied`() {
-        val command = RunCommand()
+        val command = runCommand()
 
-        command.parse(emptyArray())
+        command.parse(selecting())
 
         assertThat(command.baselineScenario).isNull()
     }
 
     @Test
     fun `run is variant mode and so does not enforce by default`() {
-        val command = RunCommand()
+        val command = runCommand()
 
-        command.parse(emptyArray())
+        command.parse(selecting())
 
         assertThat(command.mode).isEqualTo(ComparisonMode.VARIANT)
         assertThat(command.mode.resolveFailOnRegression(command.failOnRegressionFlag)).isFalse()
@@ -58,20 +87,29 @@ class CommandParsingTest {
 
     @Test
     fun `run enforcement can be switched on explicitly`() {
-        val command = RunCommand()
+        val command = runCommand()
 
-        command.parse(arrayOf("--fail-on-regression"))
+        command.parse(selecting("--fail-on-regression"))
 
         assertThat(command.mode.resolveFailOnRegression(command.failOnRegressionFlag)).isTrue()
     }
 
     @Test
     fun `timeout is unbounded unless requested`() {
-        val command = RunCommand()
+        val command = runCommand()
 
-        command.parse(emptyArray())
+        command.parse(selecting())
 
         assertThat(command.timeoutMinutes).isNull()
+    }
+
+    @Test
+    fun `the profiler executable defaults to the one on PATH`() {
+        val command = runCommand()
+
+        command.parse(selecting())
+
+        assertThat(command.gradleProfilerExecutable).isEqualTo("gradle-profiler")
     }
 
     @Test
