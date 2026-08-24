@@ -152,6 +152,76 @@ class ScenarioInspectorTest {
     private fun inspector(profiler: GradleProfiler) = ScenarioInspector(profiler)
 }
 
+class BenchmarkFailureSummaryTest {
+
+    /** Verbatim shape of a real failed benchmark: pages of progress, one real error. */
+    private val realFailureOutput = """
+        * Writing results to /tmp/out/raw
+        * Settings
+        Project dir: /repo
+        Output dir: /tmp/out/raw
+        Profiler: none
+        Benchmark: true
+        Gradle User Home: /repo/gradle-user-home
+        * Inspecting the build using its default Gradle version
+        * Stopping daemons
+        * Scenarios
+        Scenario: Broken using Gradle 8.14.3
+          Run: run tasks noSuchTaskExistsHere
+          Warm-ups: 1
+          Builds: 2
+        * Running scenario Broken using Gradle 8.14.3 (scenario 1/1)
+        * Running warm-up build #1
+        ERROR: failed to run build. See log file for details.
+        * Stopping daemons
+        org.gradle.tooling.BuildException: Could not execute build using connection to Gradle installation '/repo/gradle'
+    """.trimIndent()
+
+    @Test
+    fun `only the lines describing the failure are kept`() {
+        val summary = ScenarioInspector.summarizeBenchmarkFailure(realFailureOutput)
+
+        assertThat(summary).contains("failed to run build")
+        assertThat(summary).contains("Could not execute build")
+    }
+
+    @Test
+    fun `progress logging and settings dumps are discarded`() {
+        val summary = ScenarioInspector.summarizeBenchmarkFailure(realFailureOutput)
+
+        assertThat(summary).doesNotContain("Gradle User Home")
+        assertThat(summary).doesNotContain("Inspecting the build")
+        assertThat(summary).doesNotContain("Stopping daemons")
+    }
+
+    @Test
+    fun `the summary stays short enough to belong on a console`() {
+        val summary = ScenarioInspector.summarizeBenchmarkFailure(realFailureOutput)
+
+        assertThat(summary.lines()).hasSizeLessThanOrEqualTo(4)
+    }
+
+    @Test
+    fun `exception class names are stripped from the summary`() {
+        val summary = ScenarioInspector.summarizeBenchmarkFailure(realFailureOutput)
+
+        assertThat(summary).doesNotContain("org.gradle.tooling.BuildException:")
+    }
+
+    @Test
+    fun `output with no recognisable error falls back to the tail`() {
+        val summary = ScenarioInspector.summarizeBenchmarkFailure("one\ntwo\nthree\nfour\nfive")
+
+        assertThat(summary).contains("five")
+    }
+
+    @Test
+    fun `empty output still says something`() {
+        assertThat(ScenarioInspector.summarizeBenchmarkFailure("  \n \n"))
+            .isEqualTo("Gradle Profiler failed without reporting a reason.")
+    }
+}
+
 /** Records what it was asked to run and replays a canned result. */
 class FakeGradleProfiler(private val exitCode: Int, private val stdout: String = "", private val stderr: String = "") :
     GradleProfiler {

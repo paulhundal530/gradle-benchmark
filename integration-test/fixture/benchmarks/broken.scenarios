@@ -1,0 +1,8 @@
+# Used by integration tests to prove a failed benchmark aborts rather than
+# flowing into a comparison.
+broken {
+    title = "Broken"
+    tasks = ["noSuchTaskExistsHere"]
+    warm-ups = 1
+    iterations = 2
+}

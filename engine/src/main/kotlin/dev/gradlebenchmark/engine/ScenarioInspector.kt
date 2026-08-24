@@ -70,6 +70,28 @@ public class ScenarioInspector(private val profiler: GradleProfiler) {
          * genuinely actionable ("Available groups are: nightly") but arrives wrapped in a
          * class name and followed by a stack trace that helps nobody.
          */
+        /**
+         * Summarizes a *benchmark* failure, as opposed to a validation failure.
+         *
+         * A failed benchmark's output is dominated by progress logging, so taking
+         * everything before the first stack frame would print thirty lines of settings
+         * dump. Only lines that actually describe the failure are kept, and the profiler's
+         * own log is where someone should go for the rest.
+         */
+        internal fun summarizeBenchmarkFailure(output: String, maxLines: Int = 4): String {
+            val lines = output.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+            if (lines.isEmpty()) return "Gradle Profiler failed without reporting a reason."
+
+            val salient = lines.filter { line ->
+                line.startsWith("ERROR") ||
+                    line.startsWith("Caused by:") ||
+                    THROWABLE_PREFIX.containsMatchIn(line)
+            }
+
+            val chosen = (if (salient.isNotEmpty()) salient else lines).takeLast(maxLines)
+            return chosen.joinToString("\n") { it.replaceFirst(THROWABLE_PREFIX, "") }
+        }
+
         internal fun extractProfilerMessage(output: String): String {
             val meaningful = output.lineSequence()
                 .takeWhile { !STACK_FRAME.containsMatchIn(it) }
