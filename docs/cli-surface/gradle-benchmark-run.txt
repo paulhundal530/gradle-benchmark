@@ -16,6 +16,8 @@ Options:
   --baseline-scenario=<text>  Name of the scenario treated as the control.
                               Every other scenario is compared against it.
                               Without this, no comparison is produced.
+  --scenario=<text>           Run only this scenario. Repeat to select several.
+                              Cannot be combined with --scenario-group.
   --regression-threshold-percent=<float>
                               A candidate exceeding the baseline by more than
                               this percentage regresses.

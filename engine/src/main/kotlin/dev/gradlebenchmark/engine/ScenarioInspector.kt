@@ -16,7 +16,12 @@ import java.nio.file.Path
  */
 public class ScenarioInspector(private val profiler: GradleProfiler) {
 
-    public fun inspect(scenarioFile: Path, group: String? = null, projectDir: Path? = null): InspectionResult {
+    public fun inspect(
+        scenarioFile: Path,
+        group: String? = null,
+        projectDir: Path? = null,
+        scenarioNames: List<String> = emptyList(),
+    ): InspectionResult {
         val arguments = buildList {
             add("--benchmark")
             add("--dump-scenarios")
@@ -30,6 +35,10 @@ public class ScenarioInspector(private val profiler: GradleProfiler) {
                 add("--project-dir")
                 add(projectDir.toString())
             }
+            // Scenario names are non-option arguments, so they go last. Gradle Profiler
+            // rejects combining them with --group itself, and its message is clearer than
+            // one we would write, so it is passed through rather than pre-empted.
+            addAll(scenarioNames)
         }
 
         val invocation = profiler.invoke(arguments)

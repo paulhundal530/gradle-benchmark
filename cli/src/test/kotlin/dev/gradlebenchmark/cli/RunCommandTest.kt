@@ -96,4 +96,25 @@ class RunCommandTest {
         assertThat(outputDir.resolve("comparison.json").exists()).isFalse()
         assertThat(outputDir.resolve("report.html").exists()).isFalse()
     }
+
+    @Test
+    fun `a single scenario can be selected without inventing a group`() {
+        val profiler = FakeProfiler(scenarioNames = listOf("assemble_incremental"))
+
+        val result = run(profiler, "--scenario", "assemble_incremental")
+
+        assertThat(result.statusCode).isEqualTo(ExitCode.SUCCESS.code)
+        assertThat(result.stdout).contains("assemble_incremental")
+        assertThat(profiler.lastArguments.last()).isEqualTo("assemble_incremental")
+    }
+
+    @Test
+    fun `several scenarios can be selected by repeating the option`() {
+        val profiler = FakeProfiler(scenarioNames = listOf("one", "two"))
+
+        val result = run(profiler, "--scenario", "one", "--scenario", "two")
+
+        assertThat(result.statusCode).isEqualTo(ExitCode.SUCCESS.code)
+        assertThat(profiler.lastArguments.takeLast(2)).containsExactly("one", "two")
+    }
 }

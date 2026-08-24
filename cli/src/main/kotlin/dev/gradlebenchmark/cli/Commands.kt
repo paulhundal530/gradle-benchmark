@@ -9,6 +9,7 @@ import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.options.switch
@@ -101,6 +102,12 @@ public class ValidateCommand(profilerFactory: (String) -> GradleProfiler = { Pro
         help = "Check that this scenario is one the selection will actually run.",
     )
 
+    internal val scenarioNames: List<String> by option(
+        "--scenario",
+        help = "Run only this scenario. Repeat to select several. " +
+            "Cannot be combined with --scenario-group.",
+    ).multiple()
+
     override fun run() {
         val selection = reportOrExit(
             validator().validate(
@@ -110,6 +117,7 @@ public class ValidateCommand(profilerFactory: (String) -> GradleProfiler = { Pro
                     scenarioGroup = scenarioGroup,
                     projectDir = projectDir,
                     baselineScenario = baselineScenario,
+                    scenarioNames = scenarioNames,
                 ),
             ),
         )
@@ -147,6 +155,12 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
         help = "Name of the scenario treated as the control. Every other scenario is " +
             "compared against it. Without this, no comparison is produced.",
     )
+
+    internal val scenarioNames: List<String> by option(
+        "--scenario",
+        help = "Run only this scenario. Repeat to select several. " +
+            "Cannot be combined with --scenario-group.",
+    ).multiple()
 
     internal val regressionThresholdPercent: Double by option(
         "--regression-threshold-percent",
@@ -190,6 +204,7 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
                     scenarioGroup = scenarioGroup,
                     projectDir = projectDir,
                     baselineScenario = baselineScenario,
+                    scenarioNames = scenarioNames,
                 ),
             ),
         )
@@ -203,6 +218,7 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
                 scenarioGroup = selection.group,
                 projectDir = projectDir,
                 gradleUserHome = gradleUserHome,
+                scenarioNames = scenarioNames,
             ),
         )
 

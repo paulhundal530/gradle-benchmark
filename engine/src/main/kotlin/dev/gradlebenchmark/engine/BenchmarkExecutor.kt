@@ -84,6 +84,8 @@ public class BenchmarkExecutor(private val profiler: GradleProfiler) {
             add("--project-dir")
             add(it.toString())
         }
+        // Non-option arguments, so they must come last.
+        addAll(request.scenarioNames)
     }
 
     /**
@@ -141,6 +143,8 @@ public data class BenchmarkRequest(
      * re-downloading Gradle on every run.
      */
     val gradleUserHome: Path? = null,
+    /** Individual scenarios to run. Empty means every scenario the selection resolves to. */
+    val scenarioNames: List<String> = emptyList(),
 )
 
 /** Outcome of running a benchmark. */
