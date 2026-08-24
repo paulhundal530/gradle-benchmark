@@ -1,8 +1,6 @@
 package dev.gradlebenchmark.cli
 
 import com.github.ajalt.clikt.core.parse
-import dev.gradlebenchmark.engine.GradleProfiler
-import dev.gradlebenchmark.engine.ProfilerInvocation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -12,30 +10,26 @@ import kotlin.io.path.writeText
 /**
  * Covers option parsing and defaulting.
  *
- * `run` now validates its selection, so these tests supply a resolvable one and a fake
- * profiler; otherwise every case would fail on selection rather than on the option under
- * test.
+ * `run` validates its selection and then benchmarks, so these tests supply a resolvable
+ * selection and a fake profiler that produces a report. Otherwise every case would fail on
+ * execution rather than on the option under test.
  */
 class CommandParsingTest {
 
     @TempDir
     lateinit var tempDir: Path
 
-    private val dumpOfTwo = "baseline {\n    tasks=[work]\n}\ncc-enabled {\n    tasks=[work]\n}"
-
     private fun scenarioFile(): Path = tempDir.resolve("build.scenarios").also { it.writeText("baseline { }\n") }
 
-    private fun resolvableProfiler() = { _: String ->
-        object : GradleProfiler {
-            override fun invoke(arguments: List<String>) = ProfilerInvocation(0, dumpOfTwo, "")
-        }
-    }
+    private fun runCommand() = RunCommand(profilerFactoryOf(FakeProfiler()))
 
-    private fun runCommand() = RunCommand(resolvableProfiler())
-
-    /** Minimal arguments that resolve, so option defaults can be observed. */
-    private fun selecting(vararg extra: String): Array<String> =
-        arrayOf("--scenario-file", scenarioFile().toString()) + extra
+    /** Minimal arguments that resolve and benchmark, so option defaults can be observed. */
+    private fun selecting(vararg extra: String): Array<String> = arrayOf(
+        "--scenario-file",
+        scenarioFile().toString(),
+        "--output-dir",
+        tempDir.resolve("out").toString(),
+    ) + extra
 
     @Test
     fun `run parses scenario selection and threshold`() {

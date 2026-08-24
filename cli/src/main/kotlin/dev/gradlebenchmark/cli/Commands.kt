@@ -14,6 +14,9 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.options.switch
 import com.github.ajalt.clikt.parameters.types.double
 import com.github.ajalt.clikt.parameters.types.path
+import dev.gradlebenchmark.engine.BenchmarkExecutionResult
+import dev.gradlebenchmark.engine.BenchmarkExecutor
+import dev.gradlebenchmark.engine.BenchmarkRequest
 import dev.gradlebenchmark.engine.GradleProfiler
 import dev.gradlebenchmark.engine.ProcessGradleProfiler
 import dev.gradlebenchmark.engine.ScenarioInspector
@@ -23,6 +26,10 @@ import java.nio.file.Path
 
 private const val MILESTONE_NOTICE =
     "Benchmark execution is not wired up yet; selection has been validated but nothing was measured."
+
+private const val COMPARISON_NOTICE =
+    "A baseline scenario was given, but comparison arrives in a later milestone; " +
+        "no comparison.json or report.html was produced."
 
 /** Root command. Holds no behavior of its own beyond dispatching to a subcommand. */
 public class GradleBenchmarkCommand : CliktCommand(name = "gradle-benchmark") {
@@ -54,8 +61,9 @@ public abstract class ArtifactWritingCommand(
         help = "Path to the gradle-profiler executable.",
     ).default(ProcessGradleProfiler.DEFAULT_EXECUTABLE)
 
-    internal fun validator(): ScenarioValidator =
-        ScenarioValidator(ScenarioInspector(profilerFactory(gradleProfilerExecutable)))
+    internal fun profiler(): GradleProfiler = profilerFactory(gradleProfilerExecutable)
+
+    internal fun validator(): ScenarioValidator = ScenarioValidator(ScenarioInspector(profiler()))
 }
 
 /**
@@ -154,6 +162,12 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
         "--no-fail-on-regression" to false,
     )
 
+    internal val gradleUserHome: Path? by option(
+        "--gradle-user-home",
+        help = "Gradle user home for the builds under measurement. Defaults to a directory " +
+            "under --output-dir; point it somewhere stable to avoid re-downloading Gradle.",
+    ).path()
+
     /**
      * Timeout is opt-in and unbounded by default: benchmarks on large repositories
      * legitimately run for a long time, and CI already provides job-level limits.
@@ -180,12 +194,46 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
             ),
         )
         describe(selection)
-        echo("output dir:    ${paths.outputDir}")
-        echo("baseline:      ${baselineScenario ?: "<none, so no comparison will be produced>"}")
-        echo("threshold:     $regressionThresholdPercent%")
-        echo("enforcement:   ${mode.resolveFailOnRegression(failOnRegressionFlag)}")
-        echo("timeout:       ${timeoutMinutes?.let { "$it min" } ?: "unbounded"}")
-        echo(MILESTONE_NOTICE, err = true)
+
+        val executor = BenchmarkExecutor(profiler())
+        val execution = executor.execute(
+            BenchmarkRequest(
+                scenarioFile = selection.scenarioFile,
+                outputDir = paths.outputDir,
+                scenarioGroup = selection.group,
+                projectDir = projectDir,
+                gradleUserHome = gradleUserHome,
+            ),
+        )
+
+        when (execution) {
+            is BenchmarkExecutionResult.Failed -> {
+                echo(execution.summary, err = true)
+                execution.detail?.lines()?.forEach { echo("  $it", err = true) }
+                echo("", err = true)
+                // Raw output is kept even on failure; it is usually the only way to find
+                // out why the build under test did not complete.
+                echo("Full Gradle Profiler log:", err = true)
+                echo("  ${execution.logFile}", err = true)
+                exitWith(ExitCode.BENCHMARK_ERROR)
+            }
+
+            is BenchmarkExecutionResult.Completed -> {
+                val measured = execution.benchmark.scenarios.sumOf { it.measuredIterations.size }
+                echo("")
+                echo(
+                    "Benchmark completed: ${execution.benchmark.scenarios.size} scenarios, " +
+                        "$measured measured iterations",
+                )
+                echo("")
+                echo("Raw result:")
+                echo("  ${execution.rawBenchmarkJson}")
+                if (baselineScenario != null) {
+                    echo("", err = true)
+                    echo(COMPARISON_NOTICE, err = true)
+                }
+            }
+        }
     }
 }
 
