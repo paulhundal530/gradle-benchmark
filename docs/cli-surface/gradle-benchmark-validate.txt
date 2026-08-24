@@ -14,4 +14,6 @@ Options:
   --project-dir=<path>        Directory containing the build under test.
   --baseline-scenario=<text>  Check that this scenario is one the selection
                               will actually run.
+  --scenario=<text>           Run only this scenario. Repeat to select several.
+                              Cannot be combined with --scenario-group.
   -h, --help                  Show this message and exit

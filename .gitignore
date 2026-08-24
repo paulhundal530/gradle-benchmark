@@ -6,3 +6,6 @@ local.properties
 *.hprof
 .idea/
 *.iml
+
+# Gradle Profiler drops an isolated Gradle user home wherever it runs.
+gradle-user-home/

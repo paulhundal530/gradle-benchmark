@@ -22,6 +22,7 @@ public class ScenarioValidator(private val inspector: ScenarioInspector) {
             scenarioFile = scenarioFile,
             group = request.scenarioGroup,
             projectDir = request.projectDir,
+            scenarioNames = request.scenarioNames,
         )
         val scenarioNames = when (inspection) {
             is InspectionResult.Rejected -> return ValidationOutcome.Invalid(
@@ -78,4 +79,6 @@ public data class ValidationRequest(
     val scenarioGroup: String? = null,
     val projectDir: Path? = null,
     val baselineScenario: String? = null,
+    /** Individual scenarios to run. Empty means every scenario the file defines. */
+    val scenarioNames: List<String> = emptyList(),
 )

@@ -108,4 +108,50 @@ class ScenarioValidatorTest {
 
         assertThat(outcome).isInstanceOf(ValidationOutcome.Valid::class.java)
     }
+
+    @Test
+    fun `named scenarios are passed to the profiler as non-option arguments`() {
+        val profiler = FakeGradleProfiler(0, "cc-enabled {\n    tasks=[work]\n}")
+
+        validator(profiler).validate(
+            ValidationRequest(
+                scenarioFile = scenarioFile(),
+                projectDir = java.nio.file.Path.of("/repo"),
+                scenarioNames = listOf("cc-enabled"),
+            ),
+        )
+
+        // Non-option arguments must come last or the profiler will not parse them.
+        assertThat(profiler.lastArguments.last()).isEqualTo("cc-enabled")
+    }
+
+    @Test
+    fun `selecting one scenario narrows what the selection resolves to`() {
+        val outcome = validator(FakeGradleProfiler(0, "cc-enabled {\n    tasks=[work]\n}")).validate(
+            ValidationRequest(scenarioFile = scenarioFile(), scenarioNames = listOf("cc-enabled")),
+        )
+
+        assertThat((outcome as ValidationOutcome.Valid).selection.scenarioNames)
+            .containsExactly("cc-enabled")
+    }
+
+    @Test
+    fun `combining names with a group is left for the profiler to reject`() {
+        val profiler = FakeGradleProfiler(
+            exitCode = 1,
+            stderr = "java.lang.IllegalArgumentException: Cannot specify both --group and " +
+                "individual scenario names.",
+        )
+
+        val outcome = validator(profiler).validate(
+            ValidationRequest(
+                scenarioFile = scenarioFile(),
+                scenarioGroup = "nightly",
+                scenarioNames = listOf("cc-enabled"),
+            ),
+        )
+
+        val problem = (outcome as ValidationOutcome.Invalid).problems.single()
+        assertThat(problem.detail).contains("Cannot specify both --group")
+    }
 }
