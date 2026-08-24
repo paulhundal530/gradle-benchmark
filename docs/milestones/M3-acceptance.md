@@ -94,11 +94,34 @@ changing; one asserts the profiler version explicitly, so when a release does wr
 ## Verification
 
 ```bash
-./gradlew build                      # 120 unit tests
+./gradlew build                      # 125 unit tests
 ./gradlew :engine:integrationTest    # real profiler, real Gradle builds
 ```
 
 See the local validation walkthrough in the pull request for end-to-end CLI checks.
+
+## Selecting individual scenarios
+
+Running one scenario previously meant adding a `scenario-groups` block to the user's own
+file, which is a poor trade for a faster feedback loop. `--scenario <name>`, repeatable,
+now selects directly:
+
+```bash
+gradle-benchmark run --scenario-file performance.scenarios --project-dir . \
+  --scenario assemble_incremental
+```
+
+Gradle Profiler already accepts scenario names as *non-option* arguments, so they are
+appended last, where it expects them. A test asserts that position, because putting them
+anywhere else silently stops them being parsed.
+
+It also rejects combining names with `--group` on its own, and its message is clearer than
+one we would write, so that combination is passed through rather than pre-empted:
+
+```
+Cannot specify both --group and individual scenario names.
+Use either only '--group x' OR specify scenario names directly.
+```
 
 ## Findings for Milestone 4, from a real Android project
 
