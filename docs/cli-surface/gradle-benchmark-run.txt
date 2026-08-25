@@ -18,13 +18,6 @@ Options:
                               Without this, no comparison is produced.
   --scenario=<text>           Run only this scenario. Repeat to select several.
                               Cannot be combined with --scenario-group.
-  --regression-threshold-percent=<float>
-                              A candidate exceeding the baseline by more than
-                              this percentage regresses.
-  --fail-on-regression, --no-fail-on-regression
-                              Exit non-zero when a regression is detected.
-                              Defaults to false for variant comparison, which
-                              is exploratory.
   --gradle-user-home=<path>   Gradle user home for the builds under
                               measurement. Defaults to a directory under
                               --output-dir; point it somewhere stable to avoid

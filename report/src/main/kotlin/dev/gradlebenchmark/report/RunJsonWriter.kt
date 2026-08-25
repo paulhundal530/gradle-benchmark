@@ -26,6 +26,9 @@ public object RunJsonWriter {
 
     public fun render(run: BenchmarkRun): String = json.encodeToString(run)
 
+    /** Reads a previously written run, for comparing two of them. */
+    public fun read(text: String): BenchmarkRun = json.decodeFromString(text)
+
     public fun write(run: BenchmarkRun, destination: Path): Path {
         destination.createParentDirectories()
         destination.writeText(render(run))

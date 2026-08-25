@@ -18,7 +18,15 @@ gradle-benchmark-action
 
 The product is:
 
-> **Regression testing for Gradle build performance.**
+> **Reproducible benchmark comparison for Gradle builds.**
+
+The tool reports what it measured, how precisely, and under what conditions. It does not
+decide whether a difference is acceptable. Deciding that requires knowing what a scenario is
+for, and the tool does not.
+
+Sections below that describe regression thresholds, enforcement and nightly monitoring are
+superseded by `docs/design/observational-model.md`, which records why enforcement was tried
+and abandoned.
 
 Gradle Benchmark uses **Gradle Profiler** as the underlying benchmark engine, then adds the missing CI and interpretation layer around it.
 

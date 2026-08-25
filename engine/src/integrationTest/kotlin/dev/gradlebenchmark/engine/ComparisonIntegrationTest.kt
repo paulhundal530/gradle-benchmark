@@ -1,9 +1,7 @@
 package dev.gradlebenchmark.engine
 
 import dev.gradlebenchmark.core.ComparisonEngine
-import dev.gradlebenchmark.core.ComparisonStatus
 import dev.gradlebenchmark.core.Direction
-import dev.gradlebenchmark.core.ScenarioStatus
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeAll
@@ -56,8 +54,8 @@ class ComparisonIntegrationTest {
             .isTrue()
         assertThat(slow.observation.direction).isEqualTo(Direction.SLOWER)
         assertThat(slow.observation.deltaPercent).isGreaterThan(100.0)
-        assertThat(slow.verdict.status).isEqualTo(ScenarioStatus.REGRESSION)
-        assertThat(comparison.overallComparisonStatus).isEqualTo(ComparisonStatus.REGRESSION_PRESENT)
+        // Reported, not judged: the tool says how much slower and how precisely it knows.
+        assertThat(slow.observation.resolvablePercent).isLessThan(slow.observation.deltaPercent)
     }
 
     @Test

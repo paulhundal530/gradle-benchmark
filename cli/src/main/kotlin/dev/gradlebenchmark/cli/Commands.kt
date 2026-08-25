@@ -12,11 +12,10 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
-import com.github.ajalt.clikt.parameters.options.switch
 import com.github.ajalt.clikt.parameters.types.double
 import com.github.ajalt.clikt.parameters.types.path
+import dev.gradlebenchmark.core.BenchmarkRun
 import dev.gradlebenchmark.core.ComparisonEngine
-import dev.gradlebenchmark.core.ComparisonPolicy
 import dev.gradlebenchmark.engine.BenchmarkExecutionResult
 import dev.gradlebenchmark.engine.BenchmarkExecutor
 import dev.gradlebenchmark.engine.BenchmarkRequest
@@ -32,6 +31,8 @@ import dev.gradlebenchmark.report.RunJsonWriter
 import java.nio.file.Path
 import java.time.Instant
 import java.util.UUID
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.readText
 
 private const val MILESTONE_NOTICE =
     "Benchmark execution is not wired up yet; selection has been validated but nothing was measured."
@@ -166,20 +167,6 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
             "Cannot be combined with --scenario-group.",
     ).multiple()
 
-    internal val regressionThresholdPercent: Double by option(
-        "--regression-threshold-percent",
-        help = "A candidate exceeding the baseline by more than this percentage regresses.",
-    ).double().default(DEFAULT_THRESHOLD_PERCENT)
-
-    /** Tri-state: unset means "use the mode default", so an explicit choice always wins. */
-    internal val failOnRegressionFlag: Boolean? by option(
-        help = "Exit non-zero when a regression is detected. Defaults to false for " +
-            "variant comparison, which is exploratory.",
-    ).switch(
-        "--fail-on-regression" to true,
-        "--no-fail-on-regression" to false,
-    )
-
     internal val gradleUserHome: Path? by option(
         "--gradle-user-home",
         help = "Gradle user home for the builds under measurement. Defaults to a directory " +
@@ -194,8 +181,6 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
         "--timeout-minutes",
         help = "Abort the benchmark after this many minutes. Unbounded when unset.",
     ).double()
-
-    internal val mode: ComparisonMode get() = ComparisonMode.VARIANT
 
     override fun run() {
         // Validate before anything expensive. A misspelled baseline should cost a tenth of
@@ -267,13 +252,7 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
                 val comparison = if (baseline == null) {
                     null
                 } else {
-                    ComparisonEngine.compareVariants(
-                        run = run,
-                        baselineScenario = baseline,
-                        policy = ComparisonPolicy(
-                            regressionThresholdPercent = regressionThresholdPercent,
-                        ),
-                    )
+                    ComparisonEngine.compareVariants(run = run, baselineScenario = baseline)
                 }
 
                 echo("")
@@ -288,20 +267,25 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
                 if (comparison != null) {
                     echo("")
                     reportComparison(comparison)
-
-                    val enforcing = mode.resolveFailOnRegression(failOnRegressionFlag)
-                    val code = exitCodeFor(comparison.overallComparisonStatus, enforcing)
-                    if (code != ExitCode.SUCCESS) exitWith(code)
                 }
             }
         }
     }
 }
 
-/** Compares two normalized run files. Both are required; history is not its concern. */
+/**
+ * Compares two normalized run files.
+ *
+ * The case this tool mainly exists for: the same scenarios measured on two branches or
+ * commits, reported as what changed and how precisely it was measured.
+ *
+ * Both arguments are required. Differences between the runs are reported rather than
+ * refused, because a deliberate experiment usually *is* a comparison where something
+ * differs, and deciding which differences invalidate it is the user's call.
+ */
 public class CompareCommand(profilerFactory: (String) -> GradleProfiler = { ProcessGradleProfiler(it) }) :
     ArtifactWritingCommand(name = "compare", profilerFactory = profilerFactory) {
-    override fun help(context: Context): String = "Compare two compatible run.json files and write comparison.json."
+    override fun help(context: Context): String = "Compare two run.json files and report what changed."
 
     internal val baseline: Path by option(
         "--baseline",
@@ -313,28 +297,46 @@ public class CompareCommand(profilerFactory: (String) -> GradleProfiler = { Proc
         help = "run.json treated as the candidate.",
     ).path().required()
 
-    internal val regressionThresholdPercent: Double by option(
-        "--regression-threshold-percent",
-        help = "A candidate exceeding the baseline by more than this percentage regresses.",
-    ).double().default(DEFAULT_THRESHOLD_PERCENT)
-
-    /** Tri-state: unset means "use the mode default", so an explicit choice always wins. */
-    internal val failOnRegressionFlag: Boolean? by option(
-        help = "Exit non-zero when a regression is detected. Defaults to true here, " +
-            "because historical and revision comparison exist to gate on regressions.",
-    ).switch(
-        "--fail-on-regression" to true,
-        "--no-fail-on-regression" to false,
-    )
-
-    internal val mode: ComparisonMode get() = ComparisonMode.HISTORICAL
+    internal val measurement: String by option(
+        "--measurement",
+        help = "Which measured quantity to compare.",
+    ).default(ComparisonEngine.DEFAULT_MEASUREMENT)
 
     override fun run() {
-        echo("baseline:        $baseline")
-        echo("candidate:       $candidate")
-        echo("threshold:       $regressionThresholdPercent%")
-        echo("fail-on-regression: ${mode.resolveFailOnRegression(failOnRegressionFlag)}")
-        echo(MILESTONE_NOTICE, err = true)
+        val baselineRun = readRun(baseline)
+        val candidateRun = readRun(candidate)
+
+        val comparison = ComparisonEngine.compareRuns(
+            baselineRun = baselineRun,
+            candidateRun = candidateRun,
+            measurement = measurement,
+        )
+
+        if (comparison.scenarios.isEmpty()) {
+            echo("No scenarios were shared by these two runs, so nothing was compared.", err = true)
+            comparison.diagnostics.forEach { echo("  $it", err = true) }
+            exitWith(ExitCode.INVALID_INPUT)
+        }
+
+        val written = ComparisonJsonWriter.write(comparison, paths.comparisonJson)
+        reportComparison(comparison)
+        echo("")
+        echo("Result:")
+        echo("  $written")
+    }
+
+    private fun readRun(path: Path): BenchmarkRun {
+        if (!path.isRegularFile()) {
+            echo("Run file does not exist: $path", err = true)
+            echo("  Checked ${path.toAbsolutePath()}", err = true)
+            exitWith(ExitCode.INVALID_INPUT)
+        }
+        return runCatching { RunJsonWriter.read(path.readText()) }
+            .getOrElse { failure ->
+                echo("Could not read $path as a run.json.", err = true)
+                failure.message?.let { echo("  $it", err = true) }
+                exitWith(ExitCode.INVALID_INPUT)
+            }
     }
 }
 
@@ -342,8 +344,8 @@ public class CompareCommand(profilerFactory: (String) -> GradleProfiler = { Proc
  * Conventional `help` subcommand, so `gradle-benchmark help run` works alongside
  * `gradle-benchmark run --help`.
  *
- * Implemented by re-parsing against a fresh command tree rather than reaching into
- * Clikt's context internals, which keeps it robust across Clikt versions.
+ * Implemented by re-parsing against a fresh command tree rather than reaching into Clikt's
+ * context internals, which keeps it robust across Clikt versions.
  */
 public class HelpCommand : CliktCommand(name = "help") {
     override fun help(context: Context): String = "Show usage for the tool or a command."
@@ -357,8 +359,6 @@ public class HelpCommand : CliktCommand(name = "help") {
         echo(helpTextFor(commandPath))
     }
 }
-
-internal const val DEFAULT_THRESHOLD_PERCENT: Double = 5.0
 
 /**
  * Renders the help text Clikt would print for [commandPath].

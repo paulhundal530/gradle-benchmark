@@ -21,15 +21,16 @@ public enum class Direction {
 }
 
 /**
- * What was measured, independent of anyone's policy.
+ * What was measured.
  *
- * Always populated, never affected by configuration. A team reading `comparison.json` gets
- * the signal whether or not they gate on it, and a threshold change never rewrites history.
+ * The whole of what this tool asserts. Everything here is a fact about the experiment
+ * rather than a judgement about the result, so it stays true regardless of what anyone
+ * considers acceptable.
  *
- * [resolvablePercent] is the smallest difference this run's sample sizes could distinguish,
- * derived from the measured values rather than assumed. It is what makes
- * [Status.INCONCLUSIVE] meaningful: a delta below it is not evidence of no change, it is
- * absence of evidence.
+ * [resolvablePercent] is the smallest difference these sample sizes could distinguish,
+ * derived from the measured values rather than assumed. [distinguishable] says whether the
+ * observed difference exceeds it. That is a statement about the measurement: it does not
+ * say the change is good, bad, or worth acting on.
  */
 @Serializable
 public data class Observation(
@@ -43,6 +44,14 @@ public data class Observation(
     /** Measured iterations on each side, because resolution follows directly from them. */
     val baselineSampleSize: Int,
     val candidateSampleSize: Int,
+    /**
+     * Warm-ups on each side.
+     *
+     * Reported because "24.3% faster, from 3 warm-ups and 10 measured iterations" is a
+     * claim someone can reproduce, where the percentage alone is not.
+     */
+    val baselineWarmUpCount: Int = 0,
+    val candidateWarmUpCount: Int = 0,
     /**
      * Whether [resolvablePercent] can be trusted.
      *
@@ -85,11 +94,22 @@ public data class Observation(
          */
         internal const val MINIMUM_RELIABLE_SAMPLES: Int = 4
 
+        /**
+         * How far a difference must exceed an untrustworthy interval to count.
+         *
+         * Below [MINIMUM_RELIABLE_SAMPLES] the interval is optimistic, so a difference only
+         * slightly larger than it proves nothing. A difference several times larger is
+         * beyond anything that optimism explains.
+         */
+        internal const val SMALL_SAMPLE_MARGIN: Double = 3.0
+
         public fun of(
             baseline: List<Double>,
             candidate: List<Double>,
             unit: String,
             statistic: Statistic = Statistic.MEDIAN,
+            baselineWarmUps: Int = 0,
+            candidateWarmUps: Int = 0,
         ): Observation {
             require(baseline.isNotEmpty() && candidate.isNotEmpty()) {
                 "Cannot compare without measurements on both sides"
@@ -115,7 +135,15 @@ public data class Observation(
                 resolvable / baselineValue * 100.0
             }
 
-            val distinguishable = abs(candidateValue - baselineValue) > resolvable
+            val reliable = baseline.size >= MINIMUM_RELIABLE_SAMPLES &&
+                candidate.size >= MINIMUM_RELIABLE_SAMPLES
+
+            // When the interval itself cannot be trusted, demand a much wider margin before
+            // treating a difference as established. A five-fold difference is obvious no
+            // matter how few iterations produced it; a difference merely twice an
+            // untrustworthy interval is not.
+            val margin = if (reliable) 1.0 else SMALL_SAMPLE_MARGIN
+            val distinguishable = abs(candidateValue - baselineValue) > resolvable * margin
 
             return Observation(
                 baselineValue = baselineValue,
@@ -131,8 +159,9 @@ public data class Observation(
                 distinguishable = distinguishable,
                 baselineSampleSize = baseline.size,
                 candidateSampleSize = candidate.size,
-                resolutionReliable = baseline.size >= MINIMUM_RELIABLE_SAMPLES &&
-                    candidate.size >= MINIMUM_RELIABLE_SAMPLES,
+                baselineWarmUpCount = baselineWarmUps,
+                candidateWarmUpCount = candidateWarmUps,
+                resolutionReliable = reliable,
             )
         }
 

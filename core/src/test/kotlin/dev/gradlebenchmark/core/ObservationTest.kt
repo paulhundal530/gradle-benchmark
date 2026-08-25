@@ -86,151 +86,41 @@ class ObservationTest {
         assertThatThrownBy { observe(emptyList(), realSamples) }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
-}
-
-/**
- * The three-way rule is the heart of the model, so each branch is pinned.
- *
- * A straight threshold comparison would assert things the data does not support in both
- * directions: passing a delta the run could not resolve, and flagging a regression it could
- * not distinguish.
- */
-class RegressionPolicyTest {
-
-    private val policy = ComparisonPolicy(regressionThresholdPercent = 5.0)
-
-    private fun observation(
-        delta: Double,
-        resolvable: Double,
-        distinguishable: Boolean = delta > resolvable,
-        n: Int = 5,
-    ) = Observation(
-        baselineValue = 100.0,
-        candidateValue = 100.0 + delta,
-        unit = "ms",
-        deltaPercent = delta,
-        direction = if (distinguishable) Direction.SLOWER else Direction.INDISTINGUISHABLE,
-        resolvablePercent = resolvable,
-        distinguishable = distinguishable,
-        baselineSampleSize = n,
-        candidateSampleSize = n,
-        resolutionReliable = n >= Observation.MINIMUM_RELIABLE_SAMPLES,
-    )
 
     @Test
-    fun `a clear regression beyond the threshold regresses`() {
-        val verdict = RegressionPolicy.judge(observation(delta = 14.2, resolvable = 4.1), policy)
+    fun `an unmistakable difference is established even when noise cannot be estimated`() {
+        // A candidate five times faster, from a real pairing. Refusing to call that
+        // distinguishable would withhold something the data plainly shows.
+        val observation = observe(listOf(2296.0, 2012.0), listOf(482.0, 444.0, 438.0))
 
-        assertThat(verdict.status).isEqualTo(ScenarioStatus.REGRESSION)
-        assertThat(verdict.explanation).contains("14.2%").contains("5.0%")
+        assertThat(observation.distinguishable).isTrue()
+        assertThat(observation.direction).isEqualTo(Direction.FASTER)
+        assertThat(observation.resolutionReliable)
+            .describedAs("Two and three iterations cannot estimate noise")
+            .isFalse()
     }
 
     @Test
-    fun `a small delta on a precise run passes`() {
-        // 1% observed, 2% resolvable: even the worst case is 3%, inside a 5% threshold.
-        val verdict = RegressionPolicy.judge(observation(delta = 1.0, resolvable = 2.0), policy)
+    fun `a marginal difference at tiny sample sizes is not established`() {
+        // Barely separated, and at n=2 the interval that separates them is optimistic.
+        val observation = observe(listOf(100.0, 101.0), listOf(101.0, 102.0))
 
-        assertThat(verdict.status).isEqualTo(ScenarioStatus.PASS)
+        assertThat(observation.distinguishable)
+            .describedAs("A wider margin is required when the interval cannot be trusted")
+            .isFalse()
     }
 
     @Test
-    fun `the same small delta on an imprecise run is inconclusive, not a pass`() {
-        // 1% observed but 8.8% resolvable: the true difference could be 9%.
-        val verdict = RegressionPolicy.judge(observation(delta = 1.0, resolvable = 8.8), policy)
-
-        assertThat(verdict.status)
-            .describedAs("Passing here would assert something the experiment did not establish")
-            .isEqualTo(ScenarioStatus.INCONCLUSIVE)
-    }
-
-    @Test
-    fun `a delta above the threshold the run cannot distinguish is not a regression`() {
-        val verdict = RegressionPolicy.judge(
-            observation(delta = 6.0, resolvable = 8.8, distinguishable = false),
-            policy,
+    fun `warm-up counts are carried through so a result can be reproduced`() {
+        val observation = Observation.of(
+            baseline = realSamples,
+            candidate = realSamples,
+            unit = "ms",
+            baselineWarmUps = 3,
+            candidateWarmUps = 4,
         )
 
-        assertThat(verdict.status).isEqualTo(ScenarioStatus.INCONCLUSIVE)
-    }
-
-    @Test
-    fun `an inconclusive verdict still reports the numbers and says why`() {
-        // Enough iterations to trust the interval, but the delta sits inside it.
-        val verdict = RegressionPolicy.judge(observation(delta = 2.1, resolvable = 8.8, n = 6), policy)
-
-        assertThat(verdict.explanation)
-            .contains("+2.1%")
-            .contains("8.8%")
-            .contains("not evidence of no change")
-            .contains("6")
-    }
-
-    @Test
-    fun `an improvement passes rather than regressing`() {
-        val verdict = RegressionPolicy.judge(
-            observation(delta = -18.6, resolvable = 2.0, distinguishable = true),
-            policy,
-        )
-
-        assertThat(verdict.status).isEqualTo(ScenarioStatus.PASS)
-    }
-
-    @Test
-    fun `the threshold boundary is exclusive and uses the unrounded value`() {
-        // Precise run, so resolution is not what decides these.
-        val justUnder = RegressionPolicy.judge(observation(delta = 4.9, resolvable = 0.05), policy)
-        val exactly = RegressionPolicy.judge(observation(delta = 5.0, resolvable = 0.0), policy)
-        val justOver = RegressionPolicy.judge(observation(delta = 5.001, resolvable = 0.0), policy)
-
-        assertThat(justUnder.status).isEqualTo(ScenarioStatus.PASS)
-        assertThat(exactly.status).isEqualTo(ScenarioStatus.PASS)
-        assertThat(justOver.status)
-            .describedAs("5.001% regresses even though it displays as 5.00%")
-            .isEqualTo(ScenarioStatus.REGRESSION)
-    }
-
-    @Test
-    fun `the policy that produced a verdict is recorded with it`() {
-        val custom = ComparisonPolicy(regressionThresholdPercent = 10.0)
-
-        val verdict = RegressionPolicy.judge(observation(delta = 6.0, resolvable = 1.0), custom)
-
-        assertThat(verdict.policy).isEqualTo(custom)
-        assertThat(verdict.status).isEqualTo(ScenarioStatus.PASS)
-    }
-
-    @Test
-    fun `a run too small to estimate noise never passes`() {
-        // 1% delta, tiny apparent interval - but at n=2 that interval cannot be trusted.
-        val verdict = RegressionPolicy.judge(
-            observation(delta = 1.0, resolvable = 0.5, n = 2),
-            policy,
-        )
-
-        assertThat(verdict.status)
-            .describedAs("A pass here would rest on the one number known to be unreliable")
-            .isEqualTo(ScenarioStatus.INCONCLUSIVE)
-        assertThat(verdict.explanation).contains("too few to estimate how noisy")
-    }
-
-    @Test
-    fun `a clear regression is still reported even when noise cannot be estimated`() {
-        // Too little data to rule a change out is not too little to notice a large one.
-        val verdict = RegressionPolicy.judge(
-            observation(delta = 60.0, resolvable = 5.0, distinguishable = true, n = 2),
-            policy,
-        )
-
-        assertThat(verdict.status).isEqualTo(ScenarioStatus.REGRESSION)
-    }
-
-    @Test
-    fun `resolution is trusted once there are enough iterations`() {
-        val verdict = RegressionPolicy.judge(
-            observation(delta = 1.0, resolvable = 0.5, n = 4),
-            policy,
-        )
-
-        assertThat(verdict.status).isEqualTo(ScenarioStatus.PASS)
+        assertThat(observation.baselineWarmUpCount).isEqualTo(3)
+        assertThat(observation.candidateWarmUpCount).isEqualTo(4)
     }
 }

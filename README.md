@@ -1,15 +1,18 @@
 # gradle-benchmark
 
-Gradle Benchmark turns build-speed benchmarking into an automated regression check.
+Gradle Benchmark turns Gradle Profiler measurements into reproducible, comparable results.
 
-Gradle Profiler measures builds. Gradle Benchmark interprets those measurements against an
-explicit tolerance, produces machine-readable results and a human-readable report, and
-integrates with CI so teams catch build-speed regressions before they become a developer
-productivity problem.
+Gradle Profiler measures builds. Gradle Benchmark normalizes those measurements, compares
+two of them, and reports what changed, how precisely it was measured, and under what
+conditions.
 
-> **Status:** early development. Milestone 5 of 10 — benchmarks run and variants are
-> compared, producing `run.json` and `comparison.json`. The HTML report and historical
-> comparison are not implemented yet.
+It reports; it does not judge. There is no threshold and no pass or fail, because deciding
+whether a difference matters requires knowing what the scenario is for. A team wanting to
+gate on a number can read `comparison.json` and apply one they chose. See
+[the observational model](docs/design/observational-model.md) for why.
+
+> **Status:** early development. Benchmarks run, and two runs or two scenarios can be
+> compared, producing `run.json` and `comparison.json`. The HTML report is not built yet.
 
 ## Requirements
 
@@ -59,92 +62,98 @@ Baseline scenario 'basline' is not part of this selection.
 `run` performs the same validation before measuring, so a misspelled baseline costs a
 tenth of a second rather than the minutes it takes to benchmark the wrong thing.
 
-### Comparing variants
+### Comparing scenarios in one run
 
-The baseline is comparison policy, not a property of the measurements: Gradle Profiler
-writes every scenario into one result file and has no reason to know which is the control.
-Name it explicitly, and every other scenario is compared against it.
+The baseline is your choice of control, named explicitly. Every other scenario in the run is
+compared against it.
 
 ```bash
 gradle-benchmark run \
   --scenario-file build.scenarios \
-  --baseline-scenario baseline \
-  --regression-threshold-percent 5
+  --baseline-scenario baseline
+```
+
+### Comparing two runs
+
+The main case: the same scenario measured twice, on two branches or commits.
+
+```bash
+gradle-benchmark run --scenario-file build.scenarios --output-dir out/before
+# switch branch, or change what you are testing
+gradle-benchmark run --scenario-file build.scenarios --output-dir out/after
+
+gradle-benchmark compare \
+  --baseline out/before/run.json \
+  --candidate out/after/run.json
 ```
 
 ```text
-baseline
-    |
-    +-- compare --> configuration-cache
-    +-- compare --> configuration-cache-isolated
+Compared a3f21c9 against 8b04e7d:
+
+  configuration                 1.62s    -24.3%
+    beyond what this experiment could resolve (±3.1%)
+    3 warm-ups, 10 measured iterations per side
+    differs in:
+      args: [] -> [--configuration-cache]
 ```
 
-Omitting `--baseline-scenario` produces `run.json` only, with no comparison.
-
-### Comparing runs
-
-```bash
-gradle-benchmark compare \
-  --baseline previous/run.json \
-  --candidate current/run.json \
-  --regression-threshold-percent 5
-```
-
-Both arguments are required. "There may be no baseline" is an orchestration concern for
-the CI wrapper, not something the comparison engine models.
+Differences between the two runs are reported, never a reason to refuse. Comparing
+configuration-cache-enabled against disabled is precisely a comparison where the arguments
+differ, and that difference is the point of the experiment.
 
 ## Artifacts
 
 ```text
 build/gradle-benchmark/
 ├── run.json          normalized record of one benchmark execution
-├── comparison.json   interpretation of two compatible results
-├── report.html       human-readable report
+├── comparison.json   what two sets of measurements show
 └── raw/              preserved Gradle Profiler output, for debugging only
 ```
 
 JSON is the canonical output. Console text is informational, and nothing downstream should
-need to parse it or the HTML.
+need to parse it.
 
-## Regression policy
+## What the tool asserts
 
-A candidate whose configured measurement, summarized by the configured statistic, exceeds
-the baseline by **more than** the threshold is a regression:
+Facts about the experiment, never judgements about the result:
 
-```text
-delta <= threshold  ->  acceptable
-delta >  threshold  ->  regression
-```
+- the measured values and their statistics, over measured iterations only
+- the difference between two sides
+- **whether that difference exceeds what the experiment could resolve** — a statement about
+  the measurement, not about whether the change is acceptable
+- how many warm-ups and measured iterations produced it
+- what differed between the two sides
+- whether warm-up converged
 
-The comparison uses the unrounded value, so 5.001% regresses against a 5% threshold even
-though it displays as 5.00%.
+"Smaller than this experiment could resolve" is not the same as "unchanged", and the tool
+says which one it means.
 
-Detecting a regression is separate from failing CI. `--fail-on-regression` is the only
-thing that maps a verdict to a non-zero exit code, and the command decides only its
-default:
+### Resolution and iteration counts
 
-| Mode | Invocation | Default |
-|---|---|---|
-| Variant | `run --baseline-scenario <name>` | `false` — exploratory |
-| Historical / revision | `compare --baseline <a> --candidate <b>` | `true` — gating |
+How small a difference you can resolve follows from how many iterations you run. Measured on
+a real project with roughly 6% variation between builds:
 
-An explicit `--fail-on-regression` / `--no-fail-on-regression` always wins.
+| Iterations per side | Smallest resolvable difference |
+|---|---|
+| 2 | ~9% |
+| 9 | ~10% |
+| 18 | ~7% |
+| 35 | ~5% |
+| 97 | ~3% |
+
+Decide what size of difference matters to you, then read off the cost. A run reports what it
+could resolve, so a result is never more confident than the measurements allow.
 
 ## Exit codes
 
-These are a stable contract. Branch on them rather than parsing output.
-
 | Code | Meaning |
 |---|---|
-| 0 | Success, or an acceptable result under the configured policy |
+| 0 | The benchmark ran and results were produced |
 | 1 | Benchmark execution failure — invalid, incomplete, or unusable output |
-| 2 | Regression detected **and** `--fail-on-regression` enabled |
-| 3 | Invalid configuration or input, including an unreadable baseline file |
-| 4 | Incompatible comparison |
+| 3 | Invalid configuration or input |
 
-Code 4 is returned regardless of `--fail-on-regression`: it means nothing could be
-concluded, which must never be reported as "no regression found". Code 1 is likewise never
-suppressible — an invalid benchmark must not be silently passable.
+There is deliberately no code meaning "regression". A team wanting to fail a build on a
+threshold can read `comparison.json` and apply one they chose for a scenario they understand.
 
 ## License
 

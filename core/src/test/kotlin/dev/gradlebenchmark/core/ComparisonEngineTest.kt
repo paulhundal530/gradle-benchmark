@@ -6,17 +6,21 @@ import org.junit.jupiter.api.Test
 
 class ComparisonEngineTest {
 
+    private val steady = listOf(100.0, 101.0, 99.0, 100.0, 100.0, 101.0)
+
     private fun scenario(
         name: String,
-        values: List<Double>,
-        warmUps: List<Double> = listOf(1.0),
+        values: List<Double> = steady,
+        warmUps: List<Double> = listOf(101.0),
+        tasks: String = "assembleDebug",
+        args: List<String> = emptyList(),
         gradleVersion: String? = "9.3.1",
         buildJvmVersion: String? = "21.0.11",
     ) = ScenarioRun(
         name = name,
         title = "Title of $name",
         workloadIdentityHash = "hash-$name",
-        workloadIdentity = WorkloadIdentity(name = name, tasks = "assembleDebug"),
+        workloadIdentity = WorkloadIdentity(name = name, tasks = tasks, args = args),
         workloadConfiguration = WorkloadConfiguration(
             gradleVersion = gradleVersion,
             buildJvmVersion = buildJvmVersion,
@@ -28,7 +32,7 @@ class ComparisonEngineTest {
         ),
         measurements = listOf(
             MeasurementResult(
-                name = ComparisonPolicy.DEFAULT_MEASUREMENT,
+                name = ComparisonEngine.DEFAULT_MEASUREMENT,
                 unit = "ms",
                 statistics = Statistics.of(values),
                 values = values,
@@ -37,135 +41,148 @@ class ComparisonEngineTest {
         ),
     )
 
-    private fun run(vararg scenarios: ScenarioRun) = BenchmarkRun(
+    private fun run(
+        vararg scenarios: ScenarioRun,
+        runId: String = "run-1",
+        revision: String? = null,
+        environment: ExecutionEnvironment = ExecutionEnvironment(
+            operatingSystem = "Mac OS X",
+            architecture = "aarch64",
+            cpuCores = 10,
+        ),
+    ) = BenchmarkRun(
         toolVersion = "0.1.0",
-        runId = "run-1",
+        runId = runId,
         timestamp = "2026-08-24T00:00:00Z",
-        executionEnvironment = ExecutionEnvironment(),
+        revision = revision?.let { Revision(commit = it) },
+        executionEnvironment = environment,
         scenarios = scenarios.toList(),
     )
 
-    private val steady = listOf(100.0, 101.0, 99.0, 100.0, 100.0, 101.0)
+    // ---- variants within one run ----
 
     @Test
     fun `the baseline fans out to every other scenario`() {
         val comparison = ComparisonEngine.compareVariants(
             run(
-                scenario("baseline", steady),
+                scenario("baseline"),
                 scenario("cc-enabled", steady.map { it * 0.8 }),
                 scenario("cc-isolated", steady.map { it * 0.75 }),
             ),
             baselineScenario = "baseline",
         )
 
-        assertThat(comparison.scenarios.map { it.name })
-            .containsExactly("cc-enabled", "cc-isolated")
+        assertThat(comparison.scenarios.map { it.name }).containsExactly("cc-enabled", "cc-isolated")
         assertThat(comparison.baseline.scenarioName).isEqualTo("baseline")
-    }
-
-    @Test
-    fun `the baseline never appears as its own candidate`() {
-        val comparison = ComparisonEngine.compareVariants(
-            run(scenario("baseline", steady), scenario("other", steady)),
-            baselineScenario = "baseline",
-        )
-
-        assertThat(comparison.scenarios.map { it.name }).doesNotContain("baseline")
+        assertThat(comparison.mode).isEqualTo(ComparisonMode.VARIANT)
     }
 
     @Test
     fun `a missing baseline names what was actually found`() {
         assertThatThrownBy {
             ComparisonEngine.compareVariants(
-                run(scenario("a", steady), scenario("b", steady)),
+                run(scenario("a"), scenario("b")),
                 baselineScenario = "typo",
             )
         }.hasMessageContaining("typo").hasMessageContaining("a, b")
     }
 
     @Test
-    fun `one regressing candidate makes the run regress overall`() {
+    fun `the comparison reports a difference without judging it`() {
+        val comparison = ComparisonEngine.compareVariants(
+            run(scenario("baseline"), scenario("faster", steady.map { it * 0.5 })),
+            baselineScenario = "baseline",
+        )
+
+        val observation = comparison.scenarios.single().observation
+        assertThat(observation.deltaPercent).isLessThan(-40.0)
+        assertThat(observation.direction).isEqualTo(Direction.FASTER)
+        assertThat(observation.distinguishable).isTrue()
+    }
+
+    @Test
+    fun `the conditions that produced the numbers are reported`() {
         val comparison = ComparisonEngine.compareVariants(
             run(
-                scenario("baseline", steady),
-                scenario("fine", steady),
-                scenario("slow", steady.map { it * 1.5 }),
+                scenario("baseline", warmUps = listOf(120.0, 101.0)),
+                scenario("other", warmUps = listOf(120.0, 101.0)),
             ),
             baselineScenario = "baseline",
         )
 
-        assertThat(comparison.overallComparisonStatus)
-            .isEqualTo(ComparisonStatus.REGRESSION_PRESENT)
+        val observation = comparison.scenarios.single().observation
+        assertThat(observation.baselineWarmUpCount).isEqualTo(2)
+        assertThat(observation.baselineSampleSize).isEqualTo(steady.size)
+    }
+
+    // ---- differences are reported, never refused ----
+
+    @Test
+    fun `a configuration difference is reported and does not change the work`() {
+        val comparison = ComparisonEngine.compareVariants(
+            run(scenario("baseline"), scenario("cc", args = listOf("--configuration-cache"))),
+            baselineScenario = "baseline",
+        )
+
+        val difference = comparison.scenarios.single().differences.single { it.field == "args" }
+        assertThat(difference.candidate).contains("--configuration-cache")
+        assertThat(difference.changesWorkPerformed)
+            .describedAs("Arguments are usually the independent variable of the experiment")
+            .isFalse()
     }
 
     @Test
-    fun `an inconclusive scenario does not mask a real regression elsewhere`() {
+    fun `comparing unlike work is allowed but marked`() {
+        // Comparing a clean build against an incremental one is legal and nearly always
+        // meaningless. The tool says so rather than refusing.
+        val comparison = ComparisonEngine.compareVariants(
+            run(scenario("clean", tasks = "clean assembleDebug"), scenario("incremental")),
+            baselineScenario = "clean",
+        )
+
+        val difference = comparison.scenarios.single().differences.single { it.field == "tasks" }
+        assertThat(difference.changesWorkPerformed).isTrue()
+    }
+
+    @Test
+    fun `identical scenarios produce no differences`() {
+        val comparison = ComparisonEngine.compareVariants(
+            run(scenario("baseline"), scenario("other")),
+            baselineScenario = "baseline",
+        )
+
+        assertThat(comparison.scenarios.single().differences).isEmpty()
+    }
+
+    @Test
+    fun `a Gradle version difference is reported`() {
         val comparison = ComparisonEngine.compareVariants(
             run(
-                scenario("baseline", steady),
-                scenario("unresolvable", listOf(100.0, 130.0, 80.0)),
-                scenario("slow", steady.map { it * 1.5 }),
+                scenario("baseline", gradleVersion = "9.1"),
+                scenario("upgraded", gradleVersion = "9.2"),
             ),
             baselineScenario = "baseline",
         )
 
-        assertThat(comparison.overallComparisonStatus)
-            .isEqualTo(ComparisonStatus.REGRESSION_PRESENT)
+        assertThat(comparison.scenarios.single().differences)
+            .anySatisfy {
+                assertThat(it.field).isEqualTo("gradleVersion")
+                assertThat(it.baseline).isEqualTo("9.1")
+                assertThat(it.candidate).isEqualTo("9.2")
+            }
     }
 
-    @Test
-    fun `the policy is recorded on the comparison`() {
-        val policy = ComparisonPolicy(regressionThresholdPercent = 12.5)
-
-        val comparison = ComparisonEngine.compareVariants(
-            run(scenario("baseline", steady), scenario("other", steady)),
-            baselineScenario = "baseline",
-            policy = policy,
-        )
-
-        assertThat(comparison.comparisonPolicy).isEqualTo(policy)
-        assertThat(comparison.mode).isEqualTo(ComparisonMode.VARIANT)
-    }
+    // ---- diagnostics ----
 
     @Test
-    fun `a configuration difference is reported alongside the number`() {
+    fun `unconverged warm-up is reported as a diagnostic`() {
         val comparison = ComparisonEngine.compareVariants(
-            run(
-                scenario("baseline", steady, gradleVersion = "9.1"),
-                scenario("upgraded", steady.map { it * 1.14 }, gradleVersion = "9.2"),
-            ),
-            baselineScenario = "baseline",
-        )
-
-        assertThat(comparison.scenarios.single().workloadDelta)
-            .containsEntry("gradleVersion", listOf("9.1", "9.2"))
-    }
-
-    @Test
-    fun `identical configuration produces no workload delta`() {
-        val comparison = ComparisonEngine.compareVariants(
-            run(scenario("baseline", steady), scenario("other", steady)),
-            baselineScenario = "baseline",
-        )
-
-        assertThat(comparison.scenarios.single().workloadDelta).isEmpty()
-    }
-
-    @Test
-    fun `unconverged warm-up is reported as a diagnostic, not a verdict`() {
-        val comparison = ComparisonEngine.compareVariants(
-            run(
-                scenario("baseline", steady, warmUps = listOf(5000.0, 500.0)),
-                scenario("other", steady),
-            ),
+            run(scenario("baseline", warmUps = listOf(5000.0, 500.0)), scenario("other")),
             baselineScenario = "baseline",
         )
 
         assertThat(comparison.diagnostics)
             .anySatisfy { assertThat(it).contains("warm-up had not converged") }
-        // It describes experiment quality, so it must not become a scenario status.
-        assertThat(comparison.scenarios.single().verdict.status)
-            .isIn(ScenarioStatus.PASS, ScenarioStatus.INCONCLUSIVE)
     }
 
     @Test
@@ -179,31 +196,87 @@ class ComparisonEngineTest {
             .anySatisfy { assertThat(it).contains("only 2 measured iterations") }
     }
 
+    // ---- two runs ----
+
     @Test
-    fun `converged warm-up produces no warm-up diagnostic`() {
-        val comparison = ComparisonEngine.compareVariants(
-            run(
-                scenario("baseline", steady, warmUps = listOf(200.0, 101.0)),
-                scenario("other", steady, warmUps = listOf(200.0, 101.0)),
+    fun `scenarios shared by two runs are matched by name`() {
+        val comparison = ComparisonEngine.compareRuns(
+            baselineRun = run(scenario("configuration"), runId = "before", revision = "a3f21c9"),
+            candidateRun = run(
+                scenario("configuration", steady.map { it * 0.75 }),
+                runId = "after",
+                revision = "8b04e7d",
             ),
-            baselineScenario = "baseline",
         )
 
-        assertThat(comparison.diagnostics)
-            .noneSatisfy { assertThat(it).contains("warm-up had not converged") }
+        assertThat(comparison.mode).isEqualTo(ComparisonMode.RUNS)
+        assertThat(comparison.scenarios.map { it.name }).containsExactly("configuration")
+        assertThat(comparison.baseline.revision).isEqualTo("a3f21c9")
+        assertThat(comparison.candidate?.revision).isEqualTo("8b04e7d")
     }
 
     @Test
-    fun `a scenario missing the configured measurement is skipped rather than guessed at`() {
-        val withoutMeasurement = scenario("other", steady).copy(measurements = emptyList())
-
-        val comparison = ComparisonEngine.compareVariants(
-            run(scenario("baseline", steady), withoutMeasurement),
-            baselineScenario = "baseline",
+    fun `the branch experiment reports the argument that differs`() {
+        // The case this tool exists for: configuration cache on one branch, off on the other.
+        val comparison = ComparisonEngine.compareRuns(
+            baselineRun = run(scenario("configuration")),
+            candidateRun = run(
+                scenario(
+                    "configuration",
+                    steady.map { it * 0.75 },
+                    args = listOf("--configuration-cache"),
+                ),
+            ),
         )
 
-        assertThat(comparison.scenarios).isEmpty()
-        // Comparing nothing is a failure to compare, not a pass.
-        assertThat(comparison.overallComparisonStatus).isEqualTo(ComparisonStatus.ERROR)
+        val scenario = comparison.scenarios.single()
+        assertThat(scenario.observation.deltaPercent).isLessThan(-20.0)
+        assertThat(scenario.differences)
+            .describedAs("The argument under test must be reported, never a reason to refuse")
+            .anySatisfy { assertThat(it.field).isEqualTo("args") }
+    }
+
+    @Test
+    fun `a scenario present in only one run is noted rather than failing`() {
+        val comparison = ComparisonEngine.compareRuns(
+            baselineRun = run(scenario("shared"), scenario("only-before")),
+            candidateRun = run(scenario("shared"), scenario("only-after")),
+        )
+
+        assertThat(comparison.scenarios.map { it.name }).containsExactly("shared")
+        assertThat(comparison.diagnostics)
+            .anySatisfy { assertThat(it).contains("only-after").contains("candidate run") }
+            .anySatisfy { assertThat(it).contains("only-before").contains("baseline run") }
+    }
+
+    @Test
+    fun `runs measured on different machines are flagged`() {
+        val comparison = ComparisonEngine.compareRuns(
+            baselineRun = run(
+                scenario("shared"),
+                environment = ExecutionEnvironment(operatingSystem = "Mac OS X", architecture = "aarch64"),
+            ),
+            candidateRun = run(
+                scenario("shared"),
+                environment = ExecutionEnvironment(operatingSystem = "Linux", architecture = "amd64"),
+            ),
+        )
+
+        assertThat(comparison.diagnostics)
+            .anySatisfy { assertThat(it).contains("different machines") }
+        // Flagged, not refused.
+        assertThat(comparison.scenarios).hasSize(1)
+    }
+
+    @Test
+    fun `comparing a run against itself reports no difference`() {
+        val identical = run(scenario("configuration"))
+
+        val comparison = ComparisonEngine.compareRuns(identical, identical)
+
+        val observation = comparison.scenarios.single().observation
+        assertThat(observation.deltaPercent).isEqualTo(0.0)
+        assertThat(observation.distinguishable).isFalse()
+        assertThat(comparison.scenarios.single().differences).isEmpty()
     }
 }

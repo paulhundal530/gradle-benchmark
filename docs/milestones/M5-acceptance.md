@@ -3,10 +3,15 @@
 **Scope:** the comparison model, delta calculation, regression policy, per-scenario and
 overall status, and machine-readable comparison output. Produces `comparison.json`.
 
-**Status:** complete.
+**Status:** complete, then substantially reworked.
 
-Built on the decisions in [interpretation-model.md](../design/interpretation-model.md),
-which this milestone implements.
+Originally implemented the two-layer model in
+[interpretation-model.md](../design/interpretation-model.md). The verdict half was then
+removed: see [observational-model.md](../design/observational-model.md) for why, and
+[M5b-acceptance.md](M5b-acceptance.md) for what the milestone actually delivers now.
+
+The sections below describing statuses, thresholds and enforcement are retained as a record
+of what was tried, and no longer describe the tool.
 
 ## Two layers
 
