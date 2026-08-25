@@ -9,6 +9,16 @@ package dev.gradlebenchmark.core
  */
 public enum class ScenarioStatus {
     PASS,
+
+    /**
+     * The observed difference is smaller than the run could resolve.
+     *
+     * Not "no data", and not a pass. The numbers are still reported; what is withheld is the
+     * claim that nothing changed. Reporting PASS here would assert something the experiment
+     * did not establish.
+     */
+    INCONCLUSIVE,
+
     REGRESSION,
 }
 
@@ -29,11 +39,12 @@ public enum class ComparisonStatus(public val severity: Int) {
     PASS(0),
 
     /**
-     * Reserved. Never emitted in V1.
+     * At least one comparison could not be resolved, and none regressed.
      *
-     * Its first intended use is measurement-protocol mismatch, which V1 reports as
-     * [INCOMPATIBLE] because it has no way to express "valid but less confident".
-     * Present in the enum so introducing confidence analysis is not a breaking change.
+     * Ranks above [PASS] because it is weaker: a pass asserts the change was tolerable,
+     * this asserts only that the experiment could not tell. Ranks below
+     * [REGRESSION_PRESENT] so an unresolvable scenario never masks a real regression
+     * elsewhere in the same run.
      */
     INCONCLUSIVE(1),
 
@@ -52,6 +63,7 @@ public enum class ComparisonStatus(public val severity: Int) {
 /** Widens a per-scenario outcome into the comparison-level vocabulary. */
 public fun ScenarioStatus.toComparisonStatus(): ComparisonStatus = when (this) {
     ScenarioStatus.PASS -> ComparisonStatus.PASS
+    ScenarioStatus.INCONCLUSIVE -> ComparisonStatus.INCONCLUSIVE
     ScenarioStatus.REGRESSION -> ComparisonStatus.REGRESSION_PRESENT
 }
 
