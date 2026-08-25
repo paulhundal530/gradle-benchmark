@@ -9,5 +9,5 @@ Commands:
   validate  Validate scenario selection, configuration, and required tooling.
   run       Run a benchmark and write run.json, plus a comparison when variants
             are compared.
-  compare   Compare two compatible run.json files and write comparison.json.
+  compare   Compare two run.json files and report what changed.
   help      Show usage for the tool or a command.

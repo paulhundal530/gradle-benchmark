@@ -1,0 +1,15 @@
+# Two scenarios with a difference large enough to resolve, used to exercise comparison
+# and enforcement end to end.
+fast {
+    title = "Fast"
+    tasks = ["work"]
+    warm-ups = 3
+    iterations = 6
+}
+
+slow {
+    title = "Slow"
+    tasks = ["slowWork"]
+    warm-ups = 3
+    iterations = 6
+}

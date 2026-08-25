@@ -1,5 +1,6 @@
 package dev.gradlebenchmark.report
 
+import dev.gradlebenchmark.core.BenchmarkComparison
 import dev.gradlebenchmark.core.BenchmarkRun
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -25,9 +26,29 @@ public object RunJsonWriter {
 
     public fun render(run: BenchmarkRun): String = json.encodeToString(run)
 
+    /** Reads a previously written run, for comparing two of them. */
+    public fun read(text: String): BenchmarkRun = json.decodeFromString(text)
+
     public fun write(run: BenchmarkRun, destination: Path): Path {
         destination.createParentDirectories()
         destination.writeText(render(run))
+        return destination
+    }
+}
+
+/**
+ * Writes the interpretation to `comparison.json`.
+ *
+ * The canonical artifact other tools ingest, so it is written on the same terms as
+ * `run.json`: pretty-printed, defaults encoded, deterministic.
+ */
+public object ComparisonJsonWriter {
+
+    public fun render(comparison: BenchmarkComparison): String = RunJsonWriter.json.encodeToString(comparison)
+
+    public fun write(comparison: BenchmarkComparison, destination: Path): Path {
+        destination.createParentDirectories()
+        destination.writeText(render(comparison))
         return destination
     }
 }

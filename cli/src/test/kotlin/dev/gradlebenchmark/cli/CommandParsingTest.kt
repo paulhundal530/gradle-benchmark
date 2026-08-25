@@ -32,32 +32,13 @@ class CommandParsingTest {
     ) + extra
 
     @Test
-    fun `run parses scenario selection and threshold`() {
+    fun `run parses scenario selection`() {
         val command = runCommand()
 
-        command.parse(
-            selecting(
-                "--scenario-group",
-                "configuration-cache",
-                "--baseline-scenario",
-                "baseline",
-                "--regression-threshold-percent",
-                "7.5",
-            ),
-        )
+        command.parse(selecting("--scenario-group", "nightly", "--baseline-scenario", "baseline"))
 
-        assertThat(command.scenarioGroup).isEqualTo("configuration-cache")
+        assertThat(command.scenarioGroup).isEqualTo("nightly")
         assertThat(command.baselineScenario).isEqualTo("baseline")
-        assertThat(command.regressionThresholdPercent).isEqualTo(7.5)
-    }
-
-    @Test
-    fun `run defaults the threshold to five percent`() {
-        val command = runCommand()
-
-        command.parse(selecting())
-
-        assertThat(command.regressionThresholdPercent).isEqualTo(DEFAULT_THRESHOLD_PERCENT)
     }
 
     @Test
@@ -67,25 +48,6 @@ class CommandParsingTest {
         command.parse(selecting())
 
         assertThat(command.baselineScenario).isNull()
-    }
-
-    @Test
-    fun `run is variant mode and so does not enforce by default`() {
-        val command = runCommand()
-
-        command.parse(selecting())
-
-        assertThat(command.mode).isEqualTo(ComparisonMode.VARIANT)
-        assertThat(command.mode.resolveFailOnRegression(command.failOnRegressionFlag)).isFalse()
-    }
-
-    @Test
-    fun `run enforcement can be switched on explicitly`() {
-        val command = runCommand()
-
-        command.parse(selecting("--fail-on-regression"))
-
-        assertThat(command.mode.resolveFailOnRegression(command.failOnRegressionFlag)).isTrue()
     }
 
     @Test
@@ -107,23 +69,19 @@ class CommandParsingTest {
     }
 
     @Test
-    fun `compare is historical mode and so enforces by default`() {
-        val command = CompareCommand()
+    fun `individual scenarios can be selected`() {
+        val command = runCommand()
 
-        command.parse(arrayOf("--baseline", "old.json", "--candidate", "new.json"))
+        command.parse(selecting("--scenario", "one", "--scenario", "two"))
 
-        assertThat(command.mode).isEqualTo(ComparisonMode.HISTORICAL)
-        assertThat(command.mode.resolveFailOnRegression(command.failOnRegressionFlag)).isTrue()
+        assertThat(command.scenarioNames).containsExactly("one", "two")
     }
 
     @Test
-    fun `compare enforcement can be switched off explicitly`() {
-        val command = CompareCommand()
-
-        command.parse(
-            arrayOf("--baseline", "old.json", "--candidate", "new.json", "--no-fail-on-regression"),
-        )
-
-        assertThat(command.mode.resolveFailOnRegression(command.failOnRegressionFlag)).isFalse()
+    fun `compare requires both sides`() {
+        assertThat(runCli(arrayOf("compare", "--candidate", "new.json")))
+            .isEqualTo(ExitCode.INVALID_INPUT)
+        assertThat(runCli(arrayOf("compare", "--baseline", "old.json")))
+            .isEqualTo(ExitCode.INVALID_INPUT)
     }
 }

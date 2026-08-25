@@ -88,13 +88,38 @@ class RunCommandTest {
     }
 
     @Test
-    fun `naming a baseline says plainly that comparison is not implemented yet`() {
+    fun `naming a baseline produces a comparison`() {
         val result = run(FakeProfiler(), "--baseline-scenario", "baseline")
 
         assertThat(result.statusCode).isEqualTo(ExitCode.SUCCESS.code)
-        assertThat(result.stderr).contains("comparison arrives in a later milestone")
+        assertThat(outputDir.resolve("comparison.json").exists()).isTrue()
+        assertThat(result.stdout).contains("Compared against baseline")
+        assertThat(result.stdout).contains("cc-enabled")
+    }
+
+    @Test
+    fun `omitting a baseline produces measurements but no comparison`() {
+        val result = run(FakeProfiler())
+
+        assertThat(result.statusCode).isEqualTo(ExitCode.SUCCESS.code)
+        assertThat(outputDir.resolve("run.json").exists()).isTrue()
         assertThat(outputDir.resolve("comparison.json").exists()).isFalse()
-        assertThat(outputDir.resolve("report.html").exists()).isFalse()
+    }
+
+    @Test
+    fun `a difference the run cannot resolve is described as such`() {
+        // The fake produces 2 measured iterations by default, which resolves almost nothing.
+        val result = run(FakeProfiler(), "--baseline-scenario", "baseline")
+
+        assertThat(result.stdout).contains("within what this experiment could resolve")
+        assertThat(result.stderr).contains("only 2 measured iterations")
+    }
+
+    @Test
+    fun `a run reports the conditions that produced its numbers`() {
+        val result = run(FakeProfiler(), "--baseline-scenario", "baseline")
+
+        assertThat(result.stdout).contains("measured")
     }
 
     @Test

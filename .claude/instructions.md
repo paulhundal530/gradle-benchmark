@@ -18,7 +18,15 @@ gradle-benchmark-action
 
 The product is:
 
-> **Regression testing for Gradle build performance.**
+> **Reproducible benchmark comparison for Gradle builds.**
+
+The tool reports what it measured, how precisely, and under what conditions. It does not
+decide whether a difference is acceptable. Deciding that requires knowing what a scenario is
+for, and the tool does not.
+
+Sections below that describe regression thresholds, enforcement and nightly monitoring are
+superseded by `docs/design/observational-model.md`, which records why enforcement was tried
+and abandoned.
 
 Gradle Benchmark uses **Gradle Profiler** as the underlying benchmark engine, then adds the missing CI and interpretation layer around it.
 
@@ -1092,10 +1100,39 @@ The historical baseline is the most recent compatible benchmark that was **accep
 healthy**. It is not simply the previous run, and not the most recent successful workflow.
 
 ```text
-PASS         eligible as next baseline
+PASS         eligible as next SHORT-HORIZON baseline
 REGRESSION   does not advance the baseline
 ERROR        does not advance the baseline
 ```
+
+### This rule alone hides drift
+
+A `PASS` advancing the baseline is what allows small regressions to accumulate unseen.
+Simulating 1.5% daily drift against a 5% threshold for thirty days:
+
+```text
+auto-advancing baseline   alerts on days NONE
+                          build is 1.56x slower after 30 days
+anchored baseline         first alert on day 4
+```
+
+Each day's small regression silently becomes the next day's baseline. The rule that stops a
+*persisting* regression from vanishing is the same rule that lets *accumulating* ones hide.
+
+Anchoring alone fails in the mirror direction: after an unclaimed 20% improvement, a
+subsequent 15% regression still reads as 8% faster than the anchor and passes.
+
+Nightly comparison therefore uses **two horizons**:
+
+| Horizon | Reference | Catches | Blind to |
+|---|---|---|---|
+| Short | previous accepted run | step changes; never stale | gradual drift |
+| Long | committed anchor | accumulated drift | regressions after an unclaimed improvement |
+
+The short-horizon baseline advances on `PASS` as described above. The long-horizon anchor
+moves only when a human accepts it.
+
+See `docs/design/interpretation-model.md`.
 
 Without this rule, a regression that persists across two nights disappears:
 
@@ -1119,8 +1156,20 @@ makes persistent regressions vanish, which is precisely the failure this rule pr
 Once a team knowingly accepts a slower baseline, every subsequent run keeps reporting the
 same regression.
 
-The V1 escape hatch is manual promotion: an explicit input that publishes the current
-result as an accepted baseline. Document this rather than letting users discover it.
+Acceptance moves the long-horizon anchor, and is a deliberate, reviewable decision rather
+than a switch flipped in CI. The anchor is a file committed to the repository:
+
+```json
+{
+  "acceptedAt": "2026-08-24",
+  "reason": "AGP 9 upgrade, +6% accepted",
+  "runId": "...",
+  "scenarios": { "assemble_clean": 2154.0 }
+}
+```
+
+Moving it is a pull request: attributed, reviewed, and visible in git history. A silent
+reset in CI leaves no record of who decided a regression was acceptable, or why.
 
 Richer baseline management is a future extension, not a V1 concern.
 

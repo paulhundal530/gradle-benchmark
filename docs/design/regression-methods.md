@@ -1,7 +1,10 @@
 # Regression definition: percentage threshold versus statistical test
 
-**Status:** design note. Not implemented. Percentage threshold remains the Milestone 5
-policy; this records the case for a second method and what it would require.
+**Status:** design note, partly superseded. The two-layer model in
+[interpretation-model.md](interpretation-model.md) was adopted; a percentage threshold is
+now one *policy* over a reported observation rather than the definition of a regression.
+Mann-Whitney remains unimplemented, and the sample-size analysis below is the reason the
+observation layer reports what a run could resolve.
 
 ## The problem with a percentage threshold alone
 

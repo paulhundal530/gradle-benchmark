@@ -98,7 +98,27 @@ public data class MeasurementResult(
     val unit: String,
     val statistics: Statistics,
     val values: List<Double>,
-)
+    /**
+     * Warm-up values, in order, excluded from [statistics].
+     *
+     * Retained because they are the only evidence that warm-up converged. A series still
+     * falling at the last warm-up means the measured window began before the system had
+     * settled, which inflates every number after it. Nothing else in the run can show that.
+     */
+    val warmUpValues: List<Double> = emptyList(),
+) {
+    /**
+     * Whether warm-up appears to have converged.
+     *
+     * A crude but useful check: if the last warm-up is still more than [tolerance] above the
+     * measured median, the system was probably still settling when measurement began.
+     */
+    public fun warmUpConverged(tolerance: Double = 0.05): Boolean {
+        val lastWarmUp = warmUpValues.lastOrNull() ?: return true
+        if (statistics.median <= 0.0) return true
+        return (lastWarmUp - statistics.median) / statistics.median <= tolerance
+    }
+}
 
 /**
  * Normalizes measurement units.

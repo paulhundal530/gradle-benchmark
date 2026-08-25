@@ -91,12 +91,15 @@ public class BenchmarkRunAssembler(
         if (raw.isEmpty()) return null
 
         val normalized = MeasurementUnits.normalize(raw, sample.unit)
+        val warmUps = scenario.warmUpIterations.mapNotNull { it.values[sample.name] }
+        val normalizedWarmUps = MeasurementUnits.normalize(warmUps, sample.unit)
 
         return MeasurementResult(
             name = sample.name,
             unit = normalized.unit,
             statistics = Statistics.of(normalized.values),
             values = normalized.values,
+            warmUpValues = normalizedWarmUps.values,
         )
     }
 }
