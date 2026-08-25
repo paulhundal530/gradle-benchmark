@@ -18,12 +18,17 @@ import com.github.ajalt.clikt.parameters.types.path
 import dev.gradlebenchmark.engine.BenchmarkExecutionResult
 import dev.gradlebenchmark.engine.BenchmarkExecutor
 import dev.gradlebenchmark.engine.BenchmarkRequest
+import dev.gradlebenchmark.engine.BenchmarkRunAssembler
+import dev.gradlebenchmark.engine.GitRevisionResolver
 import dev.gradlebenchmark.engine.GradleProfiler
 import dev.gradlebenchmark.engine.ProcessGradleProfiler
 import dev.gradlebenchmark.engine.ScenarioInspector
 import dev.gradlebenchmark.engine.ScenarioValidator
 import dev.gradlebenchmark.engine.ValidationRequest
+import dev.gradlebenchmark.report.RunJsonWriter
 import java.nio.file.Path
+import java.time.Instant
+import java.util.UUID
 
 private const val MILESTONE_NOTICE =
     "Benchmark execution is not wired up yet; selection has been validated but nothing was measured."
@@ -235,14 +240,34 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
             }
 
             is BenchmarkExecutionResult.Completed -> {
-                val measured = execution.benchmark.scenarios.sumOf { it.measuredIterations.size }
+                val run = BenchmarkRunAssembler().assemble(
+                    benchmark = execution.benchmark,
+                    runId = UUID.randomUUID().toString(),
+                    timestamp = Instant.now().toString(),
+                    toolVersion = TOOL_VERSION,
+                    projectDir = projectDir,
+                    revision = GitRevisionResolver().resolve(projectDir),
+                )
+                val runJson = RunJsonWriter.write(run, paths.runJson)
+
+                val measured = run.scenarios.sumOf { it.measurementProtocol.measuredIterationCount }
                 echo("")
                 echo(
-                    "Benchmark completed: ${execution.benchmark.scenarios.size} scenarios, " +
+                    "Benchmark completed: ${run.scenarios.size} scenarios, " +
                         "$measured measured iterations",
                 )
+                run.scenarios.forEach { scenario ->
+                    val measurement = scenario.measurements.firstOrNull()
+                    val median = measurement?.statistics?.median
+                    echo(
+                        "  ${scenario.name}: " +
+                            (median?.let { "median %.0f%s".format(it, measurement.unit) } ?: "-"),
+                    )
+                }
                 echo("")
-                echo("Raw result:")
+                echo("Result:")
+                echo("  $runJson")
+                echo("Raw Gradle Profiler output:")
                 echo("  ${execution.rawBenchmarkJson}")
                 if (baselineScenario != null) {
                     echo("", err = true)

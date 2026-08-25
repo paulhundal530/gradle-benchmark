@@ -7,8 +7,8 @@ explicit tolerance, produces machine-readable results and a human-readable repor
 integrates with CI so teams catch build-speed regressions before they become a developer
 productivity problem.
 
-> **Status:** early development. Milestone 2 of 10 — scenario discovery and validation
-> work against a real Gradle Profiler; benchmark execution is not wired up yet.
+> **Status:** early development. Milestone 4 of 10 — benchmarks run and produce a
+> normalized `run.json`; comparison and reporting are not implemented yet.
 
 ## Requirements
 
