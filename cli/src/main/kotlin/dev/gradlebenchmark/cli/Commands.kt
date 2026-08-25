@@ -15,6 +15,8 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.options.switch
 import com.github.ajalt.clikt.parameters.types.double
 import com.github.ajalt.clikt.parameters.types.path
+import dev.gradlebenchmark.core.ComparisonEngine
+import dev.gradlebenchmark.core.ComparisonPolicy
 import dev.gradlebenchmark.engine.BenchmarkExecutionResult
 import dev.gradlebenchmark.engine.BenchmarkExecutor
 import dev.gradlebenchmark.engine.BenchmarkRequest
@@ -25,6 +27,7 @@ import dev.gradlebenchmark.engine.ProcessGradleProfiler
 import dev.gradlebenchmark.engine.ScenarioInspector
 import dev.gradlebenchmark.engine.ScenarioValidator
 import dev.gradlebenchmark.engine.ValidationRequest
+import dev.gradlebenchmark.report.ComparisonJsonWriter
 import dev.gradlebenchmark.report.RunJsonWriter
 import java.nio.file.Path
 import java.time.Instant
@@ -32,10 +35,6 @@ import java.util.UUID
 
 private const val MILESTONE_NOTICE =
     "Benchmark execution is not wired up yet; selection has been validated but nothing was measured."
-
-private const val COMPARISON_NOTICE =
-    "A baseline scenario was given, but comparison arrives in a later milestone; " +
-        "no comparison.json or report.html was produced."
 
 /** Root command. Holds no behavior of its own beyond dispatching to a subcommand. */
 public class GradleBenchmarkCommand : CliktCommand(name = "gradle-benchmark") {
@@ -264,14 +263,35 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
                             (median?.let { "median %.0f%s".format(it, measurement.unit) } ?: "-"),
                     )
                 }
+                val baseline = baselineScenario
+                val comparison = if (baseline == null) {
+                    null
+                } else {
+                    ComparisonEngine.compareVariants(
+                        run = run,
+                        baselineScenario = baseline,
+                        policy = ComparisonPolicy(
+                            regressionThresholdPercent = regressionThresholdPercent,
+                        ),
+                    )
+                }
+
                 echo("")
                 echo("Result:")
                 echo("  $runJson")
+                comparison?.let {
+                    echo("  ${ComparisonJsonWriter.write(it, paths.comparisonJson)}")
+                }
                 echo("Raw Gradle Profiler output:")
                 echo("  ${execution.rawBenchmarkJson}")
-                if (baselineScenario != null) {
-                    echo("", err = true)
-                    echo(COMPARISON_NOTICE, err = true)
+
+                if (comparison != null) {
+                    echo("")
+                    reportComparison(comparison)
+
+                    val enforcing = mode.resolveFailOnRegression(failOnRegressionFlag)
+                    val code = exitCodeFor(comparison.overallComparisonStatus, enforcing)
+                    if (code != ExitCode.SUCCESS) exitWith(code)
                 }
             }
         }

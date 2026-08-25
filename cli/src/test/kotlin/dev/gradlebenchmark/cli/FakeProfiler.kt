@@ -18,6 +18,8 @@ class FakeProfiler(
     private val benchmarkExitCode: Int = 0,
     private val measuredIterations: Int = 2,
     private val writesReport: Boolean = true,
+    /** When set, this scenario measures markedly slower so a regression can be exercised. */
+    private val slowScenario: String? = null,
 ) : GradleProfiler {
 
     var lastArguments: List<String> = emptyList()
@@ -45,8 +47,11 @@ class FakeProfiler(
 
     private fun report(): String {
         val scenarios = scenarioNames.joinToString(",") { name ->
+            val base = if (name == slowScenario) 30.0 else 10.0
             val iterations = (1..measuredIterations).joinToString(",") { index ->
-                """{"phase":"MEASURE","iteration":$index,"values":{"total execution time":10.0}}"""
+                // A little variation, so the interval is not degenerate.
+                val value = base + (index % 2) * 0.2
+                """{"phase":"MEASURE","iteration":$index,"values":{"total execution time":$value}}"""
             }
             """
             {"definition":{"name":"$name","tasks":"work","version":"8.14.3","args":[]},

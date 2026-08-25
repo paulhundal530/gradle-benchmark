@@ -88,13 +88,59 @@ class RunCommandTest {
     }
 
     @Test
-    fun `naming a baseline says plainly that comparison is not implemented yet`() {
+    fun `naming a baseline produces a comparison`() {
         val result = run(FakeProfiler(), "--baseline-scenario", "baseline")
 
         assertThat(result.statusCode).isEqualTo(ExitCode.SUCCESS.code)
-        assertThat(result.stderr).contains("comparison arrives in a later milestone")
+        assertThat(outputDir.resolve("comparison.json").exists()).isTrue()
+        assertThat(result.stdout).contains("Compared against baseline")
+        assertThat(result.stdout).contains("cc-enabled")
+    }
+
+    @Test
+    fun `omitting a baseline produces measurements but no comparison`() {
+        val result = run(FakeProfiler())
+
+        assertThat(result.statusCode).isEqualTo(ExitCode.SUCCESS.code)
+        assertThat(outputDir.resolve("run.json").exists()).isTrue()
         assertThat(outputDir.resolve("comparison.json").exists()).isFalse()
-        assertThat(outputDir.resolve("report.html").exists()).isFalse()
+    }
+
+    @Test
+    fun `a variant run does not gate CI by default even when a candidate regresses`() {
+        val profiler = FakeProfiler(
+            scenarioNames = listOf("baseline", "slow"),
+            measuredIterations = 6,
+            slowScenario = "slow",
+        )
+
+        val result = run(profiler, "--baseline-scenario", "baseline")
+
+        assertThat(result.statusCode)
+            .describedAs("Variant comparison is exploratory; enforcement is opt-in")
+            .isEqualTo(ExitCode.SUCCESS.code)
+    }
+
+    @Test
+    fun `enforcement can be switched on for a variant run`() {
+        val profiler = FakeProfiler(
+            scenarioNames = listOf("baseline", "slow"),
+            measuredIterations = 6,
+            slowScenario = "slow",
+        )
+
+        val result = run(profiler, "--baseline-scenario", "baseline", "--fail-on-regression")
+
+        assertThat(result.statusCode).isEqualTo(ExitCode.REGRESSION.code)
+    }
+
+    @Test
+    fun `too few iterations yields an inconclusive verdict rather than a pass`() {
+        // The fake produces 2 measured iterations by default, which cannot estimate noise.
+        val result = run(FakeProfiler(), "--baseline-scenario", "baseline")
+
+        assertThat(result.stdout).contains("inconclusive")
+        assertThat(result.stderr).contains("only 2 measured iterations")
     }
 
     @Test
