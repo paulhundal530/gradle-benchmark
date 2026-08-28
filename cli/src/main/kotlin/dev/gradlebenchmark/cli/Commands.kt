@@ -27,6 +27,7 @@ import dev.gradlebenchmark.engine.ScenarioInspector
 import dev.gradlebenchmark.engine.ScenarioValidator
 import dev.gradlebenchmark.engine.ValidationRequest
 import dev.gradlebenchmark.report.ComparisonJsonWriter
+import dev.gradlebenchmark.report.HtmlReportRenderer
 import dev.gradlebenchmark.report.RunJsonWriter
 import java.nio.file.Path
 import java.time.Instant
@@ -255,12 +256,25 @@ public class RunCommand(profilerFactory: (String) -> GradleProfiler = { ProcessG
                     ComparisonEngine.compareVariants(run = run, baselineScenario = baseline)
                 }
 
+                val reportHtml = HtmlReportRenderer.write(
+                    if (comparison == null) {
+                        // Still worth reading: the numbers exist, there is simply nothing to
+                        // compare them against, and the report says so rather than implying one.
+                        HtmlReportRenderer.render(run, ComparisonEngine.DEFAULT_MEASUREMENT)
+                    } else {
+                        HtmlReportRenderer.render(comparison, run)
+                    },
+                    paths.reportHtml,
+                )
+
                 echo("")
                 echo("Result:")
                 echo("  $runJson")
                 comparison?.let {
                     echo("  ${ComparisonJsonWriter.write(it, paths.comparisonJson)}")
                 }
+                echo("Report:")
+                echo("  $reportHtml")
                 echo("Raw Gradle Profiler output:")
                 echo("  ${execution.rawBenchmarkJson}")
 
@@ -319,10 +333,17 @@ public class CompareCommand(profilerFactory: (String) -> GradleProfiler = { Proc
         }
 
         val written = ComparisonJsonWriter.write(comparison, paths.comparisonJson)
+        val reportHtml = HtmlReportRenderer.write(
+            HtmlReportRenderer.render(comparison, baselineRun, candidateRun),
+            paths.reportHtml,
+        )
+
         reportComparison(comparison)
         echo("")
         echo("Result:")
         echo("  $written")
+        echo("Report:")
+        echo("  $reportHtml")
     }
 
     private fun readRun(path: Path): BenchmarkRun {

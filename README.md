@@ -11,8 +11,8 @@ whether a difference matters requires knowing what the scenario is for. A team w
 gate on a number can read `comparison.json` and apply one they chose. See
 [the observational model](docs/design/observational-model.md) for why.
 
-> **Status:** early development. Benchmarks run, and two runs or two scenarios can be
-> compared, producing `run.json` and `comparison.json`. The HTML report is not built yet.
+> **Status:** early development. Benchmarks run, two runs or two scenarios can be compared,
+> and results are written as JSON and as a self-contained HTML report.
 
 ## Requirements
 
@@ -107,6 +107,7 @@ differ, and that difference is the point of the experiment.
 build/gradle-benchmark/
 ├── run.json          normalized record of one benchmark execution
 ├── comparison.json   what two sets of measurements show
+├── report.html       the same thing, for reading and sharing
 └── raw/              preserved Gradle Profiler output, for debugging only
 ```
 

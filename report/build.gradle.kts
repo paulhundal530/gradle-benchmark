@@ -7,6 +7,7 @@ description = "JSON serialization and HTML rendering of the normalized model."
 
 dependencies {
     implementation(project(":core"))
+    testImplementation(project(":core"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.html)
 }
